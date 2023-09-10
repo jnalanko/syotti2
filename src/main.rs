@@ -96,7 +96,7 @@ fn main() {
     let seq_db = reader.into_db().unwrap();
 
     info!("Indexing the sequences");
-    let index = minimizer_index::MinimizerIndex::new(seq_db, m, g);
+    let index = minimizer_index::MinimizerIndex::new(seq_db, g, m);
 
     info!("Running the bait design algorithm");
     //design::run_algorithm(&fw_db, &rc_db, L, d, g, cutoff);
