@@ -232,9 +232,7 @@ GNCGATGCTGATCGTAGGTTCGAAGCTATTCGATGCGTATGCTGACNCCTGATGTCTTGACTATATGTCGTAGTTTCGAT
         let mut reader = DynamicFastXReader::new(BufReader::new(input)).unwrap();
         let mut seqs : Vec<Vec<u8>> = vec![];
         while let Some(rec) = reader.read_next().unwrap(){
-            for s in split_at_non_ACGT(rec.seq, k).into_iter() {
-                seqs.push(s);
-            }
+            seqs.push(rec.seq.to_owned());
         }
 
         // Build true k-mer occurrences map
