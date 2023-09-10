@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use indicatif::ProgressIterator;
 use jseqio::seq_db::SeqDB;
 pub struct MinimizerIndex<'a>{
     seq_storage: &'a jseqio::seq_db::SeqDB,
@@ -73,18 +74,15 @@ impl<'a> MinimizerIndex<'a>{
         
         // Find the set of distinct minimizers
         let mut minimizer_set = HashSet::<&[u8]>::new();
-        let finding_bar = indicatif::ProgressBar::new(db.sequence_count() as u64);
         log::info!("Finding minimizers");
-        for rec in db.iter(){
+        for rec in db.iter().progress(){
             let seq = rec.seq;
             get_minimizer_positions(seq, &mut minimizer_positions, k, m);
             for i in minimizer_positions.iter(){
                 let mmer = &seq[*i .. *i + m];
                 minimizer_set.insert(mmer);
             }
-            finding_bar.inc(1);
         }
-        finding_bar.finish();
 
         log::info!("Building an MPHF for the minimizers");
         // Build minimizer MPHF
