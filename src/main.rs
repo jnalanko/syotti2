@@ -93,10 +93,10 @@ fn main() {
     let writer = DynamicFastXWriter::new_to_file(outfile).unwrap(); // Let's open this right away to crash early if there's a problem
 
     info!("Reading sequences from {}", infile.display());
-    let seq_db = reader.into_db().unwrap();
+    let seq_db = Box::new(reader.into_db().unwrap());
 
     info!("Indexing the sequences");
-    let index = minimizer_index::MinimizerIndex::new(seq_db, g, m);
+    let index = minimizer_index::MinimizerIndex::new(&seq_db, g, m);
 
     info!("Running the bait design algorithm");
     //design::run_algorithm(&fw_db, &rc_db, L, d, g, cutoff);

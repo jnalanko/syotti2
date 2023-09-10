@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 
 use jseqio::seq_db::SeqDB;
-pub struct MinimizerIndex{
-    seq_storage: jseqio::seq_db::SeqDB,
-    mphf: boomphf::Mphf<Vec<u8>>, // Minimal perfect hash function
+pub struct MinimizerIndex<'a>{
+    seq_storage: &'a jseqio::seq_db::SeqDB,
+    mphf: boomphf::Mphf<&'a [u8]>, // Minimal perfect hash function
     locations: Vec<Vec<(u32, u32)>>,
     k: usize, // k-mer length
     m: usize, // Minimizer length
@@ -62,9 +62,9 @@ fn get_minimizer_positions(seq: &[u8], positions: &mut Vec<usize>, k: usize, m: 
 }
 
 
-impl MinimizerIndex{
+impl<'a> MinimizerIndex<'a>{
 
-    pub fn new(db: SeqDB, k: usize, m: usize) -> Self{
+    pub fn new(db: &'a SeqDB, k: usize, m: usize) -> Self{
         if m > k {
             panic!("m > k");
         }
@@ -72,21 +72,21 @@ impl MinimizerIndex{
         let mut minimizer_positions: Vec<usize> = vec![]; // Reusable memory
         
         // Find the set of distinct minimizers
-        let mut minimizer_set = HashSet::<Vec<u8>>::new();
+        let mut minimizer_set = HashSet::<&[u8]>::new();
         for rec in db.iter(){
             let seq = rec.seq;
             get_minimizer_positions(seq, &mut minimizer_positions, k, m);
             for i in minimizer_positions.iter(){
-                let mmer = seq[*i .. *i + m].to_owned();
-                minimizer_set.insert(mmer.clone());
+                let mmer = &seq[*i .. *i + m];
+                minimizer_set.insert(mmer);
             }
         }
 
         // Build minimizer MPHF
         // TODO: streaming without moving out a copy of the minimizers out of the hash map
         let n_mmers = minimizer_set.len();
-        let minimizers: Vec<Vec<u8>> = minimizer_set.into_iter().collect();
-        let mphf = boomphf::Mphf::<Vec::<u8>>::new_parallel(1.7, minimizers.as_slice(), None);
+        let minimizers: Vec<&[u8]> = minimizer_set.into_iter().collect();
+        let mphf = boomphf::Mphf::<&[u8]>::new_parallel(1.7, minimizers.as_slice(), None);
         
         // Build the lists of (seq_id, positions) pairs for the minimizers
         let mut locations = Vec::<Vec::<(u32,u32)>>::new();
@@ -97,7 +97,7 @@ impl MinimizerIndex{
             let seq = rec.seq;
             get_minimizer_positions(seq, &mut minimizer_positions, k, m);
             for i in minimizer_positions.iter(){
-                let mmer = seq[*i .. *i + m].to_owned();
+                let mmer = &seq[*i .. *i + m];
                 let new_entry = (seq_id as u32, *i as u32);
                 let hash = mphf.hash(&mmer) as usize;
                 locations[hash].push(new_entry);
@@ -105,7 +105,7 @@ impl MinimizerIndex{
             seq_id += 1;
         }
 
-        MinimizerIndex{seq_storage: db, mphf, locations, k: k as usize, m: m as usize, n_mmers}
+        Self{seq_storage: db, mphf, locations, k: k as usize, m: m as usize, n_mmers}
     }
 
     // Returns all occurrences of the query k-mer
