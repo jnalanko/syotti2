@@ -73,6 +73,8 @@ impl<'a> MinimizerIndex<'a>{
         
         // Find the set of distinct minimizers
         let mut minimizer_set = HashSet::<&[u8]>::new();
+        let finding_bar = indicatif::ProgressBar::new(db.sequence_count() as u64);
+        log::info!("Finding minimizers");
         for rec in db.iter(){
             let seq = rec.seq;
             get_minimizer_positions(seq, &mut minimizer_positions, k, m);
@@ -80,8 +82,11 @@ impl<'a> MinimizerIndex<'a>{
                 let mmer = &seq[*i .. *i + m];
                 minimizer_set.insert(mmer);
             }
+            finding_bar.inc(1);
         }
+        finding_bar.finish();
 
+        log::info!("Building an MPHF for the minimizers");
         // Build minimizer MPHF
         // TODO: streaming without moving out a copy of the minimizers out of the hash map
         let n_mmers = minimizer_set.len();
@@ -93,6 +98,7 @@ impl<'a> MinimizerIndex<'a>{
         locations.resize(minimizers.len(), vec![]);
         let mut seq_id: usize = 0;
 
+        log::info!("Storing minimizer locations");
         for rec in db.iter(){
             let seq = rec.seq;
             get_minimizer_positions(seq, &mut minimizer_positions, k, m);
