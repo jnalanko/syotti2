@@ -100,8 +100,7 @@ impl<'a> MinimizerIndex<'a>{
 
         let mut minimizer_list = (0..db.sequence_count()).into_par_iter()
             .map(|i| (db.get(i).seq, get_minimizer_positions_with_return(db.get(i).seq, k, m)))
-            .map(|(seq, pos_list)| pos_list.iter().map(|pos| &seq[*pos .. *pos + m]).collect::<Vec::<&[u8]>>())
-            .fold(Vec::<&[u8]>::new, |mut x, y| {x.extend(y); x} )
+            .fold(Vec::<&[u8]>::new, |mut x, (seq, pos_list)| {for p in pos_list {x.push(&seq[p..p+m]);} x} )
             .reduce(Vec::<&[u8]>::new, |mut x, y| {x.extend(y); x});
 
             /* 
