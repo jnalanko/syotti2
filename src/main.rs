@@ -1,3 +1,6 @@
+mod design;
+mod minimizer_index;
+
 use std::path::PathBuf;
 
 use clap::ArgAction;
@@ -9,7 +12,6 @@ use clap::{Command, Arg};
 use log::info;
 
 use jseqio::seq_db::SeqDB;
-
 
 fn main() {
     if std::env::var("RUST_LOG").is_err(){
@@ -56,6 +58,13 @@ fn main() {
             .default_value("20")
             .value_parser(clap::value_parser!(usize))
         )
+        .arg(Arg::new("minimizer-len")
+            .help("Length of minimizers in indexing. Must be less of equal to seed-len")
+            .short('m')
+            .long("minimizer-len")
+            .default_value("12")
+            .value_parser(clap::value_parser!(usize))
+        )
         .arg(Arg::new("cutoff")
             .help("Stop the algorithm when this coverage fraction is reached")
             .short('c')
@@ -76,10 +85,21 @@ fn main() {
     let L: usize = *cli_matches.get_one("bait-length").unwrap();
     let d: usize = *cli_matches.get_one("hamming-distance").unwrap();
     let g: usize = *cli_matches.get_one("seed-len").unwrap();
+    let m: usize = *cli_matches.get_one("minimizer-len").unwrap();
     let cutoff: f64 = *cli_matches.get_one("cutoff").unwrap();
     let randomize: bool = cli_matches.get_flag("randomize");
 
     let reader = DynamicFastXReader::from_file(infile).unwrap();
-    let mut writer = DynamicFastXWriter::new_to_file(outfile).unwrap();
+    let writer = DynamicFastXWriter::new_to_file(outfile).unwrap(); // Let's open this right away to crash early if there's a problem
+
+    info!("Reading sequences from {}", infile.display());
+    let seq_db = reader.into_db().unwrap();
+
+    info!("Indexing the sequences");
+    let index = minimizer_index::MinimizerIndex::new(seq_db, m, g);
+
+    info!("Running the bait design algorithm");
+    //design::run_algorithm(&fw_db, &rc_db, L, d, g, cutoff);
+    
 
 }
