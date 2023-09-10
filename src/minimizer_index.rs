@@ -76,6 +76,8 @@ impl<'a> MinimizerIndex<'a>{
         // Find the set of distinct minimizers
         let mut minimizer_list = Vec::<&[u8]>::new();
         log::info!("Finding minimizers");
+        let bar = indicatif::ProgressBar::new(db.sequence_count() as u64);
+        let mut progress_mod100 = 0 as u64;
         for rec in db.iter().progress(){
             let seq = rec.seq;
             get_minimizer_positions(seq, &mut minimizer_positions, k, m);
@@ -83,7 +85,12 @@ impl<'a> MinimizerIndex<'a>{
                 let mmer = &seq[*i .. *i + m];
                 minimizer_list.push(mmer);
             }
+            progress_mod100 += 1;
+            if progress_mod100 % 100 == 0{
+                bar.inc(100);
+            }
         }
+        bar.finish();
 
         // Sort minimizer_list in parallel
         log::info!("Sorting minimizers");
