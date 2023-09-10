@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use rayon::prelude::*;
 use indicatif::ProgressIterator;
 use jseqio::seq_db::SeqDB;
 pub struct MinimizerIndex<'a>{
@@ -73,27 +74,34 @@ impl<'a> MinimizerIndex<'a>{
         let mut minimizer_positions: Vec<usize> = vec![]; // Reusable memory
         
         // Find the set of distinct minimizers
-        let mut minimizer_set = HashSet::<&[u8]>::new();
+        let mut minimizer_list = Vec::<&[u8]>::new();
         log::info!("Finding minimizers");
         for rec in db.iter().progress(){
             let seq = rec.seq;
             get_minimizer_positions(seq, &mut minimizer_positions, k, m);
             for i in minimizer_positions.iter(){
                 let mmer = &seq[*i .. *i + m];
-                minimizer_set.insert(mmer);
+                minimizer_list.push(mmer);
             }
         }
+
+        // Sort minimizer_list in parallel
+        log::info!("Sorting minimizers");
+        minimizer_list.par_sort_unstable();
+        
+        // Remove duplicates from sorted list
+        log::info!("Removing duplicate minimizers");
+        minimizer_list.dedup();
 
         log::info!("Building an MPHF for the minimizers");
         // Build minimizer MPHF
         // TODO: streaming without moving out a copy of the minimizers out of the hash map
-        let n_mmers = minimizer_set.len();
-        let minimizers: Vec<&[u8]> = minimizer_set.into_iter().collect();
-        let mphf = boomphf::Mphf::<&[u8]>::new_parallel(1.7, minimizers.as_slice(), None);
+        let n_mmers = minimizer_list.len();
+        let mphf = boomphf::Mphf::<&[u8]>::new_parallel(1.7, minimizer_list.as_slice(), None);
         
         // Build the lists of (seq_id, positions) pairs for the minimizers
         let mut locations = Vec::<Vec::<(u32,u32)>>::new();
-        locations.resize(minimizers.len(), vec![]);
+        locations.resize(minimizer_list.len(), vec![]);
         let mut seq_id: usize = 0;
 
         log::info!("Storing minimizer locations");

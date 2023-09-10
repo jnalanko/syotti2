@@ -567,6 +567,7 @@ dependencies = [
  "indicatif",
  "jseqio",
  "log",
+ "rayon",
 ]
 
 [[package]]
