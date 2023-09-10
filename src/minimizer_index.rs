@@ -78,7 +78,7 @@ impl<'a> MinimizerIndex<'a>{
         log::info!("Finding minimizers");
         let bar = indicatif::ProgressBar::new(db.sequence_count() as u64);
         let mut progress_mod100 = 0 as u64;
-        for rec in db.iter().progress(){
+        for rec in db.iter(){
             let seq = rec.seq;
             get_minimizer_positions(seq, &mut minimizer_positions, k, m);
             for i in minimizer_positions.iter(){
