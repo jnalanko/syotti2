@@ -63,6 +63,25 @@ fn get_minimizer_positions(seq: &[u8], positions: &mut Vec<usize>, k: usize, m: 
     }
 }
 
+// The output will be stored to the positions-vector
+fn get_minimizer_positions_with_return(seq: &[u8], k: usize, m: usize) -> Vec<usize>{
+
+    let mut positions = Vec::<usize>::new();
+
+    // Store minimizer mappings
+    for i in 0 .. (seq.len() as i64) - (k as i64) + 1 {
+        let i = i as usize;
+        let kmer = &seq[i..i+k];
+        let min_pos = i + get_minimizer_position(kmer, m);
+
+        if positions.len() == 0 || positions[positions.len()-1] != min_pos {
+            positions.push(min_pos)
+        }
+    }
+
+    positions
+}
+
 
 impl<'a> MinimizerIndex<'a>{
 
@@ -78,6 +97,13 @@ impl<'a> MinimizerIndex<'a>{
         log::info!("Finding minimizers");
         let bar = indicatif::ProgressBar::new(db.sequence_count() as u64);
         let mut progress_mod100 = 0 as u64;
+
+        let mut minimizer_list = (0..db.sequence_count()).into_par_iter()
+            .map(|i| (db.get(i).seq, get_minimizer_positions_with_return(db.get(i).seq, k, m)))
+            .map(|(seq, pos_list)| pos_list.iter().map(|pos| &seq[*pos .. *pos + m]).collect::<Vec::<&[u8]>>())
+            .reduce(Vec::<&[u8]>::new, |mut x, y| {x.extend(y); x} );
+
+            /* 
         for rec in db.iter(){
             let seq = rec.seq;
             get_minimizer_positions(seq, &mut minimizer_positions, k, m);
@@ -90,7 +116,7 @@ impl<'a> MinimizerIndex<'a>{
                 bar.inc(100);
             }
         }
-        bar.finish();
+        bar.finish();*/
 
         // Sort minimizer_list in parallel
         log::info!("Sorting minimizers");
