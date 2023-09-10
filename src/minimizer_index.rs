@@ -179,3 +179,93 @@ impl<'a> MinimizerIndex<'a>{
     */
 
 }
+
+mod tests{
+
+    use std::io::BufReader;
+
+    use super::*;
+    use jseqio::reader::*;
+
+    fn number_of_kmers(seq_len: usize, k: usize) -> usize { // TODO: use everywhere
+        std::cmp::max(0, (seq_len as i64) - (k as i64) + 1) as usize
+    }
+
+    fn to_ascii(S: &[u8]) -> String{
+        std::str::from_utf8(S).unwrap().to_owned()
+    }
+
+    #[test]
+    fn test_get_minimizer_positions(){
+        let seq = "ATAGCTAGTCGATGCTGATCGTAGGTTCGTAGCTGTATGCTGACCCTGATGTCTGTAGTCGTGACTGACT";
+        let k: usize = 31;
+        let m: usize = 10;
+        let mut positions: Vec<usize> = vec![];
+        get_minimizer_positions(seq.as_bytes(), &mut positions, k, m);
+
+        assert_eq!(positions, vec![2,22,30,42])
+    }
+
+    #[test]
+    fn test_index_lookup(){
+
+        let input = "\
+>seq1
+ATAGCTAGTCGATGCTGATCGTAGGTTCGTAGCTGTATGCTGACCCTGATGTCTGTAGTCGTGACTGACT
+>seq2 (Substring of seq1)
+GTCGATGCTGATCGTAGGTTCGTAGCTGTATGCTGACCCTGATGTCTTGACT
+>seq3 (seq2 with a single change in the middle)
+GTCGATGCTGATCGTAGGTTCGAAGCTGTATGCTGACCCTGATGTCTTGACT
+>seq4 (contains N's)
+GNCGATGCTGATCGTAGGTTCGAAGCTATTCGATGCGTATGCTGACNCCTGATGTCTTGACTATATGTCGTAGTTTCGATCGAGAGAGTATAGAANGNA"
+.as_bytes();
+
+        let k: usize = 31;
+        let m: usize = 10;
+        
+        // Build index
+        let mut reference = DynamicFastXReader::new(BufReader::new(input)).unwrap();
+        let db = reference.into_db().unwrap();
+        let index = MinimizerIndex::new(&db, k, m);
+
+        assert_eq!(index.seq_storage.sequence_count(), 5); // The N's will split the last sequence into two parts
+        
+        // Read sequences
+        let mut reader = DynamicFastXReader::new(BufReader::new(input)).unwrap();
+        let mut seqs : Vec<Vec<u8>> = vec![];
+        while let Some(rec) = reader.read_next().unwrap(){
+            for s in split_at_non_ACGT(rec.seq, k).into_iter() {
+                seqs.push(s);
+            }
+        }
+
+        // Build true k-mer occurrences map
+        let mut true_kmer_occurrences = std::collections::HashMap::<Vec<u8>, Vec<(usize, usize)>>::new();
+        for (seq_id, seq) in seqs.iter().enumerate(){
+            for i in 0 .. number_of_kmers(seq.len(), k){
+                let key = &seq[i..i+k];
+                let new_entry = (seq_id, i);
+                if let Some(vec) = true_kmer_occurrences.get_mut(key){ // Existing k-mer
+                    vec.push(new_entry);
+                } else{ // New k-mer
+                    true_kmer_occurrences.insert(key.to_owned(), vec![new_entry]);
+                }
+            }
+        }
+
+        // Look up all k-mers in input sequences
+        for seq in seqs.iter(){
+            for i in 0 .. number_of_kmers(seq.len(), k){
+                let kmer = &seq[i..i+k];
+                let occs = index.lookup(kmer);
+                eprintln!("{} {:?} {:?}", to_ascii(&kmer), &occs, &true_kmer_occurrences[kmer]);
+                assert_eq!(occs, true_kmer_occurrences[kmer]);
+            }
+        }
+
+        // Look up a random k-mer (should not be found)
+        let random_kmer = "ATCTTATCTGGGGCTATTGCTAGGGCTTACA".as_bytes();
+        assert_eq!(index.lookup(random_kmer).len(), 0);
+    }
+
+}
