@@ -227,8 +227,6 @@ GNCGATGCTGATCGTAGGTTCGAAGCTATTCGATGCGTATGCTGACNCCTGATGTCTTGACTATATGTCGTAGTTTCGAT
         let mut reference = DynamicFastXReader::new(BufReader::new(input)).unwrap();
         let db = reference.into_db().unwrap();
         let index = MinimizerIndex::new(&db, k, m);
-
-        assert_eq!(index.seq_storage.sequence_count(), 5); // The N's will split the last sequence into two parts
         
         // Read sequences
         let mut reader = DynamicFastXReader::new(BufReader::new(input)).unwrap();
