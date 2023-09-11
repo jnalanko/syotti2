@@ -5,7 +5,7 @@ use indicatif::ProgressIterator;
 use jseqio::seq_db::SeqDB;
 pub struct MinimizerIndex<'a>{
     seq_storage: &'a jseqio::seq_db::SeqDB,
-    mphf: boomphf::Mphf<&'a [u8]>, // Minimal perfect hash function
+    mphf: boomphf::Mphf<Kmer>, // Minimal perfect hash function
     locations: Vec<(u32, u32)>,
     bucket_starts: Vec<usize>,
     k: usize, // k-mer length
@@ -30,6 +30,9 @@ fn split_at_non_ACGT(v: &[u8], k: usize) -> Vec<Vec<u8>>{
 
 // TODO: UPPER-CASE SEQUENCES
 fn is_dna(c: u8) -> bool{
+    if c == b'a' || c == b'c' || c == b'g' || c == b't' {
+        panic!("ERROR: lower case nucleotides found");
+    }
     c == b'A' || c == b'C' || c == b'G' || c == b'T'
 }
 
@@ -47,6 +50,7 @@ fn get_minimizer_position(kmer: &[u8], m: usize) -> usize{
 }
 
 // The output will be stored to the positions-vector
+// Will not return minimizers for k-mers with non-DNA characters
 fn get_minimizer_positions(seq: &[u8], positions: &mut Vec<usize>, k: usize, m: usize){
 
     positions.clear();
@@ -55,6 +59,10 @@ fn get_minimizer_positions(seq: &[u8], positions: &mut Vec<usize>, k: usize, m: 
     for i in 0 .. (seq.len() as i64) - (k as i64) + 1 {
         let i = i as usize;
         let kmer = &seq[i..i+k];
+        if kmer.iter().any(|&c| !is_dna(c)){
+            continue;
+        }
+
         let min_pos = i + get_minimizer_position(kmer, m);
 
         if positions.len() == 0 || positions[positions.len()-1] != min_pos {
@@ -68,25 +76,44 @@ fn get_minimizer_positions(seq: &[u8], positions: &mut Vec<usize>, k: usize, m: 
 fn get_minimizer_positions_with_return(seq: &[u8], k: usize, m: usize) -> Vec<usize>{
 
     let mut positions = Vec::<usize>::new();
-
-    // Store minimizer mappings
-    for i in 0 .. (seq.len() as i64) - (k as i64) + 1 {
-        let i = i as usize;
-        let kmer = &seq[i..i+k];
-        let min_pos = i + get_minimizer_position(kmer, m);
-
-        if positions.len() == 0 || positions[positions.len()-1] != min_pos {
-            positions.push(min_pos)
-        }
-    }
-
+    get_minimizer_positions(seq, &mut positions, k, m);
     positions
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, Ord, Hash, Debug)]
+struct Kmer{
+    data: u64
+}
+
+impl Kmer{
+    fn from_ascii(ascii: &[u8]) -> Result<Self, ()>{
+        if ascii.len() > 32{
+            return Err(()); // Does not fit in u64
+        }
+        let mut data = 0 as u64;
+        for i in 0 .. ascii.len(){
+            data <<= 2;
+            data |= match ascii[i]{
+                b'A' => 0,
+                b'C' => 1,
+                b'G' => 2,
+                b'T' => 3,
+                _ => {return Err(());}
+            };
+        }
+        Ok(Self{data})
+    }
+}
+
+impl std::cmp::PartialOrd for Kmer{
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering>{
+        Some(self.cmp(other))
+    }
+}
 
 impl<'a> MinimizerIndex<'a>{
 
-    fn compress_sorted_position_list(mut L: Vec::<(&[u8], u32, u32)>, h: &boomphf::Mphf<&[u8]>, n_minimizers: usize) -> (Vec<(u32, u32)>, Vec<usize>){
+    fn compress_sorted_position_list(mut L: Vec::<(Kmer, u32, u32)>, h: &boomphf::Mphf<Kmer>, n_minimizers: usize) -> (Vec<(u32, u32)>, Vec<usize>){
         
         let mut bucket_sizes: Vec::<usize> = vec![0; n_minimizers]; // Bucket sizes in left-to-right order of buckets
         for (seq, _, _) in L.iter(){
@@ -104,8 +131,8 @@ impl<'a> MinimizerIndex<'a>{
 
         // Store the locations
         let mut locations: Vec::<(u32, u32)> = vec![(0,0); *bucket_starts.last().unwrap()]; // Will have end sentinel
-        for (seq, seq_id, pos) in L{
-            let bucket = h.hash(&seq) as usize;
+        for (minmer, seq_id, pos) in L{
+            let bucket = h.hash(&minmer) as usize;
             locations[bucket_starts[bucket]] = (seq_id, pos);
             bucket_starts[bucket] += 1;
         }
@@ -130,37 +157,35 @@ impl<'a> MinimizerIndex<'a>{
                 (i, get_minimizer_positions_with_return(db.get(i).seq, k, m))
             })
             .map(|(i, pos_list)|{
-                let debug = pos_list.iter().map(|p| (&db.get(i).seq[*p..*p+m], i as u32, *p as u32)).collect::<Vec<(&[u8], u32, u32)>>();
-                debug
+                let mut tuples = Vec::<(Kmer, u32, u32)>::new();
+                for p in pos_list.iter(){
+                    let minmer = Kmer::from_ascii(&db.get(i).seq[*p..*p+m]).unwrap();
+                    tuples.push((minmer, i as u32, *p as u32));
+                }
+                tuples
             }) // Now we have lists of (minimizer, seq_id, seq_pos) tuples
-            .fold(Vec::<(&[u8], u32, u32)>::new, |mut x, y| {
+            .fold(Vec::new, |mut x, y| {
                 x.extend(y); x
             })
-            .collect::<Vec::<Vec::<(&[u8], u32, u32)>>>();
+            .collect::<Vec::<Vec::<(Kmer, u32, u32)>>>();
 
-        let mut position_list = parts.into_iter().fold(Vec::<(&[u8], u32, u32)>::new(), |mut x, y| {
+        let mut position_list = parts.into_iter().fold(Vec::new(), |mut x, y| {
             x.extend(y); x
         });
-
-        /* .fold(Vec::<(&[u8], u32, u32)>::new, |mut x, y| {
-            x.extend(y); x
-        }).reduce(Vec::<(&[u8], u32, u32)>::new, |mut x, y| {
-            x.extend(y); x
-        }); */
 
         log::info!("Sorting tuples (minimizer, seq_id, seq_pos)");
         position_list.par_sort_unstable();
 
         log::info!("Collecting distinct minimizers");
-        let mut minimizer_list: Vec<&[u8]> = vec![];
-        for (seq, _, _) in position_list.iter(){
+        let mut minimizer_list: Vec<Kmer> = vec![];
+        for (minmer, _, _) in position_list.iter(){
             match minimizer_list.last(){
                 Some(last) => {
-                    if seq != last{
-                        minimizer_list.push(seq);
+                    if minmer != last{
+                        minimizer_list.push(*minmer);
                     };
                 },
-                None => { minimizer_list.push(seq); }
+                None => { minimizer_list.push(*minmer); }
             }
         }
 
@@ -172,7 +197,7 @@ impl<'a> MinimizerIndex<'a>{
 
         log::info!("Building an MPHF for the minimizers");
         let n_mmers = minimizer_list.len();
-        let mphf = boomphf::Mphf::<&[u8]>::new_parallel(1.7, minimizer_list.as_slice(), None);
+        let mphf = boomphf::Mphf::<Kmer>::new_parallel(1.7, minimizer_list.as_slice(), None);
         drop(minimizer_list);
         
         log::info!("Compressing position lists");
@@ -190,7 +215,7 @@ impl<'a> MinimizerIndex<'a>{
         let minimizer = &kmer[min_pos .. min_pos + self.m];
 
         let mut ans: Vec<(usize,usize)> = vec![];
-        match self.mphf.try_hash(minimizer){
+        match self.mphf.try_hash(&Kmer::from_ascii(&minimizer).unwrap()){
             Some(bucket) => {
                 let bucket_range = self.bucket_starts[bucket as usize]..self.bucket_starts[bucket as usize + 1];
                 for (seq_id, seq_pos) in self.locations[bucket_range].iter(){
