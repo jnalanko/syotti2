@@ -64,6 +64,7 @@ pub fn run_algorithm(db: &SeqDB, index: &MinimizerIndex, bait_len: usize, hammin
             }
             let bait = &rec.seq[bait_start..bait_end];
             mark_all_that_are_covered_by(bait, &mut cover_marks, index, db, hamming_distance, k);
+            mark_all_that_are_covered_by(&jseqio::reverse_complement(bait), &mut cover_marks, index, db, hamming_distance, k);
 
             n_baits += 1;
             prev_end = bait_end;
@@ -139,6 +140,10 @@ mod tests{
         let reader = jseqio::reader::DynamicFastXReader::new(std::io::Cursor::new(fasta_out)).unwrap();
         let bait_db = reader.into_db().unwrap();
         let baits = bait_db.iter().map(|r| r.seq).collect::<Vec<&[u8]>>();
+
+        for b in baits.iter(){
+            println!("{}", String::from_utf8_lossy(b));
+        }
 
         assert_eq!(baits, expected_baits);
 
