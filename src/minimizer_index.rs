@@ -6,7 +6,7 @@ use jseqio::seq_db::SeqDB;
 pub struct MinimizerIndex<'a>{
     seq_storage: &'a jseqio::seq_db::SeqDB,
     mphf: boomphf::Mphf<&'a [u8]>, // Minimal perfect hash function
-    locations: Vec<(usize, usize)>,
+    locations: Vec<(u32, u32)>,
     bucket_starts: Vec<usize>,
     k: usize, // k-mer length
     m: usize, // Minimizer length
@@ -86,7 +86,7 @@ fn get_minimizer_positions_with_return(seq: &[u8], k: usize, m: usize) -> Vec<us
 
 impl<'a> MinimizerIndex<'a>{
 
-    fn compress_position_list(mut L: Vec::<(&[u8], usize, usize)>, h: &boomphf::Mphf<&[u8]>, n_minimizers: usize) -> (Vec<(usize, usize)>, Vec<usize>){
+    fn compress_position_list(mut L: Vec::<(&[u8], u32, u32)>, h: &boomphf::Mphf<&[u8]>, n_minimizers: usize) -> (Vec<(u32, u32)>, Vec<usize>){
         
         L.par_sort();
         
@@ -105,7 +105,7 @@ impl<'a> MinimizerIndex<'a>{
         bucket_starts.shrink_to_fit();
 
         // Store the locations
-        let mut locations: Vec::<(usize, usize)> = vec![(0,0); *bucket_starts.last().unwrap()]; // Will have end sentinel
+        let mut locations: Vec::<(u32, u32)> = vec![(0,0); *bucket_starts.last().unwrap()]; // Will have end sentinel
         for (seq, seq_id, pos) in L{
             let bucket = h.hash(&seq) as usize;
             locations[bucket_starts[bucket]] = (seq_id, pos);
@@ -132,11 +132,11 @@ impl<'a> MinimizerIndex<'a>{
                 (i, get_minimizer_positions_with_return(db.get(i).seq, k, m))
             })
             .map(|(i, pos_list)|{
-                let debug = pos_list.iter().map(|p| (&db.get(i).seq[*p..*p+m], i, *p)).collect::<Vec<(&[u8], usize, usize)>>();
+                let debug = pos_list.iter().map(|p| (&db.get(i).seq[*p..*p+m], i as u32, *p as u32)).collect::<Vec<(&[u8], u32, u32)>>();
                 debug
-        }).fold(Vec::<(&[u8], usize, usize)>::new, |mut x, y| {
+        }).fold(Vec::<(&[u8], u32, u32)>::new, |mut x, y| {
             x.extend(y); x
-        }).reduce(Vec::<(&[u8], usize, usize)>::new, |mut x, y| {
+        }).reduce(Vec::<(&[u8], u32, u32)>::new, |mut x, y| {
             x.extend(y); x
         });
 
