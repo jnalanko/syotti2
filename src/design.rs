@@ -39,16 +39,14 @@ fn mark_all_that_are_covered_by(bait: &[u8], cover_marks: &mut Vec<Vec<bool>>, i
 
 pub fn run_algorithm(db: &SeqDB, index: &MinimizerIndex, bait_len: usize, hamming_distance: usize, k: usize, fasta_out: &mut impl std::io::Write){
 
-    let mut baits = Vec::<Vec::<u8>>::new();
-
     // Initialize the cover marks to falses. False means not covered.
     let mut cover_marks = Vec::<Vec::<bool>>::new();
     for rec in db.iter(){
         cover_marks.push(vec![false; rec.seq.len()]);
     }
 
+    let mut n_baits = 0_usize;
     for (seq_id, rec) in db.iter().enumerate(){
-        let mut n_baits = 0_usize;
         let mut prev_end = 0_usize;
 
         // First first position in cover marks that is not yet covered
@@ -76,5 +74,5 @@ pub fn run_algorithm(db: &SeqDB, index: &MinimizerIndex, bait_len: usize, hammin
         }
     }
 
-    info!("Selected {} baits", baits.len());
+    info!("Selected {} baits", n_baits);
 }
