@@ -14,3 +14,4 @@ env_logger = "0.10.0"
 boomphf = {version = "0.5.9", features = ["serde"] }
 indicatif = "0.17.6"
 rayon = "*"
+rand_chacha = "0.3.1"

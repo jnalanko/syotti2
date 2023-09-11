@@ -1,7 +1,4 @@
-use std::collections::HashSet;
-
 use rayon::prelude::*;
-use indicatif::ProgressIterator;
 use jseqio::{seq_db::SeqDB};
 pub struct MinimizerIndex<'a>{
     seq_storage: &'a jseqio::seq_db::SeqDB,
@@ -211,7 +208,6 @@ impl<'a> MinimizerIndex<'a>{
         let mut ans: Vec<(usize,usize)> = vec![];
         match self.mphf.try_hash(&Kmer::from_ascii(&minimizer).unwrap()){
             Some(bucket) => {
-                eprintln!("Hash success {}", bucket);
                 let bucket_range = self.bucket_starts[bucket as usize]..self.bucket_starts[bucket as usize + 1];
                 for (seq_id, seq_pos) in self.locations[bucket_range].iter(){
                     
@@ -268,8 +264,11 @@ impl<'a> MinimizerIndex<'a>{
 #[cfg(test)]
 mod tests{
 
+    use std::arch::x86_64::_CMP_TRUE_UQ;
+
     use super::*;
     use jseqio::record::*;
+    use rand_chacha::{self, rand_core::{SeedableRng, RngCore}};
 
     fn number_of_kmers(seq_len: usize, k: usize) -> usize { // TODO: use everywhere
         std::cmp::max(0, (seq_len as i64) - (k as i64) + 1) as usize
@@ -290,15 +289,7 @@ mod tests{
         assert_eq!(positions, vec![2,22,30,42])
     }
 
-    fn test_vs_hash_table(db: &SeqDB, k: usize, m: usize){
-        
-        // Build index
-        let index = MinimizerIndex::new(&db, k, m);
-        
-        // Read sequences
-        let seqs = db.iter().map(|rec| rec.seq.to_owned()).collect::<Vec<Vec<u8>>>();
-
-        // Build true k-mer occurrences map
+    fn get_true_kmer_occurrences(seqs: &Vec<Vec<u8>>, k: usize) -> std::collections::HashMap<Vec<u8>, Vec<(usize, usize)>>{
         let mut true_kmer_occurrences = std::collections::HashMap::<Vec<u8>, Vec<(usize, usize)>>::new();
         for (seq_id, seq) in seqs.iter().enumerate(){
             for i in 0 .. number_of_kmers(seq.len(), k){
@@ -311,6 +302,19 @@ mod tests{
                 }
             }
         }
+        true_kmer_occurrences
+    }
+
+    fn test_vs_hash_table(db: &SeqDB, k: usize, m: usize){
+        
+        // Build index
+        let index = MinimizerIndex::new(&db, k, m);
+        
+        // Read sequences
+        let seqs = db.iter().map(|rec| rec.seq.to_owned()).collect::<Vec<Vec<u8>>>();
+
+        // Build true k-mer occurrences map
+        let true_kmer_occurrences = get_true_kmer_occurrences(&seqs, k);
 
         // Look up all k-mers in input sequences
         for seq in seqs.iter(){
@@ -322,13 +326,10 @@ mod tests{
             }
         }
 
-        // Look up a random k-mer (should not be found)
-        let random_kmer = "ATCTTATCTGGGGCTATTGCTAGGGCTTACA".as_bytes();
-        assert_eq!(index.lookup(random_kmer).len(), 0);
     }
 
     #[test]
-    fn test_index_lookup(){
+    fn test_index_lookup_small(){
 
         let mut db = SeqDB::new();
         db.push_record(RefRecord{head: b"seq1", seq: b"ATAGCTAGTCGATGCTGATCGTAGGTTCGTAGCTGTATGCTGACCCTGATGTCTGTAGTCGTGACTGACT", qual: None});
@@ -336,6 +337,84 @@ mod tests{
         db.push_record(RefRecord{head: b"seq3 (seq2 with a single change in the middle)", seq: b"GTCGATGCTGATCGTAGGTTCGAAGCTGTATGCTGACCCTGATGTCTTGACT", qual: None});
 
         test_vs_hash_table(&db, 31, 10);
+        test_vs_hash_table(&db, 10, 10);
+        test_vs_hash_table(&db, 1, 1);
+
+        // Look up a random k-mer (should not be found)
+        let index = MinimizerIndex::new(&db, 31, 10);
+        let random_kmer = "ATCTTATCTGGGGCTATTGCTAGGGCTTACA".as_bytes();
+        assert_eq!(index.lookup(random_kmer).len(), 0);
+    }
+
+    #[test] 
+    fn test_index_lookup_large_random(){
+
+        let mut db = SeqDB::new();
+
+        // Create a random number generator with the fixed seed
+        let seed = [123; 32];
+        let mut rng = rand_chacha::ChaCha20Rng::from_seed(seed);
+
+        // Generate 100 random sequences of length 100
+        for i in 0 .. 100 {
+            let mut seq = vec![0; 100];
+            for j in 0 .. 100 {
+                seq[j] = match rng.next_u64() % 4 {
+                    0 => b'A',
+                    1 => b'C',
+                    2 => b'G',
+                    3 => b'T',
+                    _ => panic!("Impossible"),
+                };
+            }
+            db.push_record(RefRecord{head: format!("seq{}", i).as_bytes(), seq: &seq, qual: None});
+        }
+
+        let seqs = db.iter().map(|rec| rec.seq.to_owned()).collect::<Vec<Vec<u8>>>();
+
+        // We now have 10k base pairs.
+        // There are 4^6 = 4096 possible 6-mers.
+        // We use k = 6 so that many k-mers are found but not all.
+
+        let k = 6;
+        let m = 3;
+
+        // For queries, do all possible 6-mers
+        let mut queries = vec![vec![0; k]; 4usize.pow(k as u32)];
+        for i in 0 .. 4usize.pow(k as u32){
+            let mut j = i;
+            for l in 0 .. k {
+                queries[i][l] = match j % 4 {
+                    0 => b'A',
+                    1 => b'C',
+                    2 => b'G',
+                    3 => b'T',
+                    _ => panic!("Impossible"),
+                };
+                j /= 4;
+            }
+
+            eprintln!("{} {}", i, to_ascii(&queries[i]));
+        }
+
+        let mut true_occurrences = get_true_kmer_occurrences(&seqs, k);
+
+        // Put in empty lists for k-mers that are not present
+        for query in queries.iter(){
+            if !true_occurrences.contains_key(query){
+                true_occurrences.insert(query.to_owned(), vec![]);
+            }
+        }
+
+        let index = MinimizerIndex::new(&db, k, m);
+
+        // Verify
+        for query in queries {
+            let occs = index.lookup(&query);
+            eprintln!("{} {:?} {:?}", to_ascii(&query), &occs, &true_occurrences[&query]);
+            assert_eq!(occs, true_occurrences[&query]);
+        }
+        
     }
 
     // TODO: test handling Ns
