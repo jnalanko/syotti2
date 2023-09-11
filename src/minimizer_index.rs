@@ -6,7 +6,8 @@ use jseqio::seq_db::SeqDB;
 pub struct MinimizerIndex<'a>{
     seq_storage: &'a jseqio::seq_db::SeqDB,
     mphf: boomphf::Mphf<&'a [u8]>, // Minimal perfect hash function
-    locations: Vec<Vec<(u32, u32)>>,
+    locations: Vec<(usize, usize)>,
+    bucket_starts: Vec<usize>,
     k: usize, // k-mer length
     m: usize, // Minimizer length
     n_mmers: usize, // Number of distinct m-mers stored in the mphf
@@ -85,6 +86,39 @@ fn get_minimizer_positions_with_return(seq: &[u8], k: usize, m: usize) -> Vec<us
 
 impl<'a> MinimizerIndex<'a>{
 
+    fn compress_position_list(mut L: Vec::<(&[u8], usize, usize)>, h: &boomphf::Mphf<&[u8]>, n_minimizers: usize) -> (Vec<(usize, usize)>, Vec<usize>){
+        L.par_sort();
+        
+        let mut bucket_sizes: Vec::<usize> = vec![0; n_minimizers]; // Bucket sizes in left-to-right order of buckets
+        for (seq, _, _) in L.iter(){
+            bucket_sizes[h.hash(&seq) as usize] += 1;
+        }
+
+        // Get the starting positions of buckets
+        let mut sum = 0 as usize;
+        let mut bucket_starts = vec![0];
+        for i in 0 .. bucket_sizes.len(){
+            sum += bucket_sizes[i];
+            bucket_starts.push(sum)
+        }
+        bucket_starts.shrink_to_fit();
+
+        // Store the locations
+        let mut locations: Vec::<(usize, usize)> = vec![(0,0); *bucket_starts.last().unwrap()]; // Will have end sentinel
+        for (seq, seq_id, pos) in L{
+            let bucket = h.hash(&seq) as usize;
+            locations[bucket_starts[bucket]] = (seq_id, pos);
+            bucket_starts[bucket] += 1;
+        }
+
+        // Rewind back the bucket starts
+        for (i,s) in bucket_sizes.iter().enumerate(){
+            bucket_starts[i] -= s;
+        }
+
+        (locations, bucket_starts)
+    }
+
     pub fn new(db: &'a SeqDB, k: usize, m: usize) -> Self{
         if m > k {
             panic!("m > k");
@@ -98,59 +132,36 @@ impl<'a> MinimizerIndex<'a>{
         let bar = indicatif::ProgressBar::new(db.sequence_count() as u64);
         let mut progress_mod100 = 0 as u64;
 
-        let mut minimizer_list = (0..db.sequence_count()).into_par_iter()
-            .map(|i| (db.get(i).seq, get_minimizer_positions_with_return(db.get(i).seq, k, m)))
-            .fold(Vec::<&[u8]>::new, |mut x, (seq, pos_list)| {for p in pos_list {x.push(&seq[p..p+m]);} x} )
-            .reduce(Vec::<&[u8]>::new, |mut x, y| {x.extend(y); x});
+        
+        let mut position_list = Vec::<(&[u8], usize, usize)>::new(); // k-mer, seq_id, pos
 
-            /* 
-        for rec in db.iter(){
-            let seq = rec.seq;
-            get_minimizer_positions(seq, &mut minimizer_positions, k, m);
-            for i in minimizer_positions.iter(){
-                let mmer = &seq[*i .. *i + m];
-                minimizer_list.push(mmer);
-            }
-            progress_mod100 += 1;
-            if progress_mod100 % 100 == 0{
-                bar.inc(100);
-            }
-        }
-        bar.finish();*/
+        (0..db.sequence_count()).into_par_iter()
+            .map(|i|{
+                (i, get_minimizer_positions_with_return(db.get(i).seq, k, m))
+            })
+            .map(|(i, pos_list)|{
+                pos_list.iter().map(|p| (&db.get(i).seq[*p..*p+m], i, *p)).collect::<Vec<(&[u8], usize, usize)>>()
+        }).fold(Vec::<(&[u8], usize, usize)>::new, |mut x, y| {
+            x.extend(y); x
+        }).reduce(Vec::<(&[u8], usize, usize)>::new, |mut x, y| {
+            x.extend(y); x
+        });
 
-        // Sort minimizer_list in parallel
+        let mut minimizer_list = position_list.iter().map(|(s,_,_)| *s).collect::<Vec<&[u8]>>();
+
         log::info!("Sorting minimizers");
         minimizer_list.par_sort_unstable();
         
-        // Remove duplicates from sorted list
         log::info!("Removing duplicate minimizers");
         minimizer_list.dedup();
 
         log::info!("Building an MPHF for the minimizers");
-        // Build minimizer MPHF
-        // TODO: streaming without moving out a copy of the minimizers out of the hash map
         let n_mmers = minimizer_list.len();
         let mphf = boomphf::Mphf::<&[u8]>::new_parallel(1.7, minimizer_list.as_slice(), None);
         
-        // Build the lists of (seq_id, positions) pairs for the minimizers
-        let mut locations = Vec::<Vec::<(u32,u32)>>::new();
-        locations.resize(minimizer_list.len(), vec![]);
-        let mut seq_id: usize = 0;
-
-        log::info!("Storing minimizer locations");
-        for rec in db.iter(){
-            let seq = rec.seq;
-            get_minimizer_positions(seq, &mut minimizer_positions, k, m);
-            for i in minimizer_positions.iter(){
-                let mmer = &seq[*i .. *i + m];
-                let new_entry = (seq_id as u32, *i as u32);
-                let hash = mphf.hash(&mmer) as usize;
-                locations[hash].push(new_entry);
-            }
-            seq_id += 1;
-        }
-
-        Self{seq_storage: db, mphf, locations, k: k as usize, m: m as usize, n_mmers}
+        let (locations, bucket_starts) = Self::compress_position_list(position_list, &mphf, n_mmers);
+    
+        Self{seq_storage: db, mphf, locations, bucket_starts, k: k as usize, m: m as usize, n_mmers}
     }
 
     // Returns all occurrences of the query k-mer
@@ -161,8 +172,9 @@ impl<'a> MinimizerIndex<'a>{
 
         let mut ans: Vec<(usize,usize)> = vec![];
         match self.mphf.try_hash(minimizer){
-            Some(hash) =>
-                for (seq_id, seq_pos) in self.locations[hash as usize].iter(){
+            Some(bucket) => {
+                let bucket_range = self.bucket_starts[bucket as usize]..self.bucket_starts[bucket as usize + 1];
+                for (seq_id, seq_pos) in self.locations[bucket_range].iter(){
                     
                     // Start of the k-mer that contains this minimizer occurrence:
                     let start = *seq_pos as i64 - min_pos as i64;
@@ -176,23 +188,12 @@ impl<'a> MinimizerIndex<'a>{
                             ans.push((*seq_id as usize, start));
                         }
                     }
-                },
+                }
+            },
             None => (), // No matches
         }
 
         ans
-    }
-
-    fn print_stats(&self) {
-        let mut n_minimizers = 0usize;
-        let mut n_ambiguous = 0usize; 
-        for v in &self.locations {
-            if v.len() > 1{
-                n_ambiguous += 1;
-            }
-            n_minimizers += 1;
-        }
-        eprintln!("Fraction of ambiguous minimizers: {}", (n_ambiguous as f64) / (n_minimizers as f64));
     }
 
     /*
