@@ -15,7 +15,8 @@ fn hamming_distance_not_matching_N(a: &[u8], b: &[u8]) -> usize{
     dist
 }
 
-fn mark_all_that_are_covered_by(bait: &[u8], cover_marks: &mut Vec<Vec<bool>>, index: &MinimizerIndex, db: &SeqDB, hamming_distance: usize, k: usize){
+// Returns the number of new bases covered
+fn mark_all_that_are_covered_by(bait: &[u8], cover_marks: &mut Vec<Vec<bool>>, index: &MinimizerIndex, db: &SeqDB, hamming_distance: usize, k: usize) -> usize{
     let mut align_starts = HashSet::<(usize,usize)>::new(); // Pairs (seq_id, seq_pos)
     for (bait_pos, kmer) in bait.windows(k).enumerate(){
         for (seq_id, seq_pos) in index.lookup(kmer){
@@ -28,23 +29,30 @@ fn mark_all_that_are_covered_by(bait: &[u8], cover_marks: &mut Vec<Vec<bool>>, i
         }
     }
 
+    let mut new_covered_bases = 0_usize;
     for (seq_id, seq_pos) in align_starts{
         if hamming_distance_not_matching_N(bait, &db.get(seq_id).seq[seq_pos..seq_pos+bait.len()]) <= hamming_distance{
             for i in seq_pos..seq_pos+bait.len(){
+                new_covered_bases += !cover_marks[seq_id][i] as usize;
                 cover_marks[seq_id][i] = true; // This is within bounds because it was checked above
             }
         }
     }
+
+    new_covered_bases
 }
 
-pub fn run_algorithm(db: &SeqDB, index: &MinimizerIndex, bait_len: usize, hamming_distance: usize, k: usize, fasta_out: &mut impl std::io::Write){
+pub fn run_algorithm(db: &SeqDB, index: &MinimizerIndex, bait_len: usize, hamming_distance: usize, k: usize, cutoff: f64, fasta_out: &mut impl std::io::Write){
 
     // Initialize the cover marks to falses. False means not covered.
     let mut cover_marks = Vec::<Vec::<bool>>::new();
+    let mut total_seq_len = 0_usize;
     for rec in db.iter(){
         cover_marks.push(vec![false; rec.seq.len()]);
+        total_seq_len += rec.seq.len();
     }
 
+    let mut total_covered = 0_usize;
     let mut n_baits = 0_usize;
     for (seq_id, rec) in db.iter().enumerate(){
         let mut prev_end = 0_usize;
@@ -63,8 +71,8 @@ pub fn run_algorithm(db: &SeqDB, index: &MinimizerIndex, bait_len: usize, hammin
                 bait_end -= excess;
             }
             let bait = &rec.seq[bait_start..bait_end];
-            mark_all_that_are_covered_by(bait, &mut cover_marks, index, db, hamming_distance, k);
-            mark_all_that_are_covered_by(&jseqio::reverse_complement(bait), &mut cover_marks, index, db, hamming_distance, k);
+            total_covered += mark_all_that_are_covered_by(bait, &mut cover_marks, index, db, hamming_distance, k);
+            total_covered += mark_all_that_are_covered_by(&jseqio::reverse_complement(bait), &mut cover_marks, index, db, hamming_distance, k);
 
             n_baits += 1;
             prev_end = bait_end;
@@ -72,6 +80,11 @@ pub fn run_algorithm(db: &SeqDB, index: &MinimizerIndex, bait_len: usize, hammin
             fasta_out.write_all(format!(">{}\n", n_baits).as_bytes()).unwrap();
             fasta_out.write_all(bait).unwrap();
             fasta_out.write_all(b"\n").unwrap();
+
+            if (total_covered as f64) / (total_seq_len as f64) >= cutoff{
+                info!("Reached coverage cutoff of {}% at {} baits", cutoff*100.0, n_baits);
+                return;
+            }
         }
     }
 
@@ -135,7 +148,7 @@ mod tests{
 
         let index = MinimizerIndex::new(&db, g, 1);
         let mut fasta_out = Vec::<u8>::new();
-        run_algorithm(&db, &index, bait_length, d, g, &mut fasta_out);
+        run_algorithm(&db, &index, bait_length, d, g, 1.0, &mut fasta_out);
 
         let reader = jseqio::reader::DynamicFastXReader::new(std::io::Cursor::new(fasta_out)).unwrap();
         let bait_db = reader.into_db().unwrap();

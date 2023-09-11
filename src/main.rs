@@ -99,7 +99,7 @@ fn main() {
     let index = minimizer_index::MinimizerIndex::new(&seq_db, g, m);
 
     info!("Designing baits");
-    design::run_algorithm(&seq_db, &index, L, d, g, &mut writer);
+    design::run_algorithm(&seq_db, &index, L, d, g, cutoff, &mut writer);
     
 
 }
