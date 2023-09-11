@@ -86,9 +86,7 @@ fn get_minimizer_positions_with_return(seq: &[u8], k: usize, m: usize) -> Vec<us
 
 impl<'a> MinimizerIndex<'a>{
 
-    fn compress_position_list(mut L: Vec::<(&[u8], u32, u32)>, h: &boomphf::Mphf<&[u8]>, n_minimizers: usize) -> (Vec<(u32, u32)>, Vec<usize>){
-        
-        L.par_sort_unstable();
+    fn compress_sorted_position_list(mut L: Vec::<(&[u8], u32, u32)>, h: &boomphf::Mphf<&[u8]>, n_minimizers: usize) -> (Vec<(u32, u32)>, Vec<usize>){
         
         let mut bucket_sizes: Vec::<usize> = vec![0; n_minimizers]; // Bucket sizes in left-to-right order of buckets
         for (seq, _, _) in L.iter(){
@@ -178,7 +176,7 @@ impl<'a> MinimizerIndex<'a>{
         drop(minimizer_list);
         
         log::info!("Compressing position lists");
-        let (locations, bucket_starts) = Self::compress_position_list(position_list, &mphf, n_mmers);
+        let (locations, bucket_starts) = Self::compress_sorted_position_list(position_list, &mphf, n_mmers);
 
         log::info!("Stored {} location pairs", locations.len());
     
