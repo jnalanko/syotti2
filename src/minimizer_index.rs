@@ -80,7 +80,7 @@ fn get_minimizer_positions_with_return(seq: &[u8], k: usize, m: usize) -> Vec<us
     positions
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Ord, Hash, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Debug)]
 struct Kmer{
     data: u64
 }
@@ -102,12 +102,6 @@ impl Kmer{
             };
         }
         Ok(Self{data})
-    }
-}
-
-impl std::cmp::PartialOrd for Kmer{
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering>{
-        Some(self.cmp(other))
     }
 }
 
