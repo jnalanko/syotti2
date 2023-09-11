@@ -90,7 +90,7 @@ fn main() {
     let randomize: bool = cli_matches.get_flag("randomize");
 
     let reader = DynamicFastXReader::from_file(infile).unwrap();
-    let writer = DynamicFastXWriter::new_to_file(outfile).unwrap(); // Let's open this right away to crash early if there's a problem
+    let mut writer = std::io::BufWriter::new(std::fs::File::open(outfile).unwrap()); // Let's open this right away to crash early if there's a problem
 
     info!("Reading sequences from {}", infile.display());
     let seq_db = Box::new(reader.into_db().unwrap());
@@ -98,8 +98,8 @@ fn main() {
     info!("Indexing the sequences");
     let index = minimizer_index::MinimizerIndex::new(&seq_db, g, m);
 
-    info!("Running the bait design algorithm");
-    //design::run_algorithm(&fw_db, &rc_db, L, d, g, cutoff);
+    info!("Designing baits");
+    design::run_algorithm(&seq_db, &index, L, d, g, &mut writer);
     
 
 }

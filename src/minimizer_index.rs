@@ -379,7 +379,7 @@ mod tests{
 
         // For queries, do all possible 6-mers
         let mut queries = vec![vec![0; k]; 4usize.pow(k as u32)];
-        
+
         #[allow(clippy::needless_range_loop)] // Clearer this way IMO
         for i in 0 .. 4usize.pow(k as u32){
             let mut j = i;
