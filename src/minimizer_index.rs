@@ -85,9 +85,9 @@ struct Kmer{
 }
 
 impl Kmer{
-    fn from_ascii(ascii: &[u8]) -> Result<Self, ()>{
+    fn from_ascii(ascii: &[u8]) -> Result<Self, String>{
         if ascii.len() > 32{
-            return Err(()); // Does not fit in u64
+            return Err(String::from("k-mer is too large to be packed into 64 bits"));
         }
         let mut data = 0_u64;
         for c in ascii.iter() {
@@ -97,7 +97,7 @@ impl Kmer{
                 b'C' => 1,
                 b'G' => 2,
                 b'T' => 3,
-                _ => {return Err(());}
+                _ => {return Err(format!("Invalid nucleotide: '{}'", *c as char));}
             };
         }
         Ok(Self{data})
