@@ -87,6 +87,7 @@ fn get_minimizer_positions_with_return(seq: &[u8], k: usize, m: usize) -> Vec<us
 impl<'a> MinimizerIndex<'a>{
 
     fn compress_position_list(mut L: Vec::<(&[u8], usize, usize)>, h: &boomphf::Mphf<&[u8]>, n_minimizers: usize) -> (Vec<(usize, usize)>, Vec<usize>){
+        
         L.par_sort();
         
         let mut bucket_sizes: Vec::<usize> = vec![0; n_minimizers]; // Bucket sizes in left-to-right order of buckets
@@ -123,24 +124,16 @@ impl<'a> MinimizerIndex<'a>{
         if m > k {
             panic!("m > k");
         }
-
-        let mut minimizer_positions: Vec<usize> = vec![]; // Reusable memory
         
-        // Find the set of distinct minimizers
-        let mut minimizer_list = Vec::<&[u8]>::new();
         log::info!("Finding minimizers");
-        let bar = indicatif::ProgressBar::new(db.sequence_count() as u64);
-        let mut progress_mod100 = 0 as u64;
 
-        
-        let mut position_list = Vec::<(&[u8], usize, usize)>::new(); // k-mer, seq_id, pos
-
-        (0..db.sequence_count()).into_par_iter()
+        let position_list = (0..db.sequence_count()).into_par_iter()
             .map(|i|{
                 (i, get_minimizer_positions_with_return(db.get(i).seq, k, m))
             })
             .map(|(i, pos_list)|{
-                pos_list.iter().map(|p| (&db.get(i).seq[*p..*p+m], i, *p)).collect::<Vec<(&[u8], usize, usize)>>()
+                let debug = pos_list.iter().map(|p| (&db.get(i).seq[*p..*p+m], i, *p)).collect::<Vec<(&[u8], usize, usize)>>();
+                debug
         }).fold(Vec::<(&[u8], usize, usize)>::new, |mut x, y| {
             x.extend(y); x
         }).reduce(Vec::<(&[u8], usize, usize)>::new, |mut x, y| {
