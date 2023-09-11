@@ -265,11 +265,10 @@ impl<'a> MinimizerIndex<'a>{
 
 }
 
+#[cfg(test)]
 mod tests{
 
-    use std::io::BufReader;
     use super::*;
-    use jseqio::reader::*;
     use jseqio::record::*;
 
     fn number_of_kmers(seq_len: usize, k: usize) -> usize { // TODO: use everywhere
