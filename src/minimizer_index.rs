@@ -111,7 +111,7 @@ impl<'a> MinimizerIndex<'a>{
         
         let mut bucket_sizes: Vec::<usize> = vec![0; n_minimizers]; // Bucket sizes in left-to-right order of buckets
         for (seq, _, _) in L.iter(){
-            bucket_sizes[h.hash(&seq) as usize] += 1;
+            bucket_sizes[h.hash(seq) as usize] += 1;
         }
 
         // Get the starting positions of buckets
@@ -198,8 +198,6 @@ impl<'a> MinimizerIndex<'a>{
         let (locations, bucket_starts) = Self::compress_sorted_position_list(position_list, &mphf, n_mmers);
 
         log::info!("Stored {} location pairs", locations.len());
-
-        dbg!(&locations, &bucket_starts);
     
         Self{seq_storage: db, mphf, locations, bucket_starts, k, m, n_mmers}
     }
