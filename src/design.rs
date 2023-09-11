@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use jseqio::{seq_db::SeqDB, writer::DynamicFastXWriter};
+use log::info;
 use crate::minimizer_index::MinimizerIndex;
 
 fn hamming(a: &[u8], b: &[u8]) -> usize{
@@ -74,4 +75,6 @@ pub fn run_algorithm(db: &SeqDB, index: &MinimizerIndex, bait_len: usize, hammin
             fasta_out.write_all(b"\n").unwrap();
         }
     }
+
+    info!("Selected {} baits", baits.len());
 }
