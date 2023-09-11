@@ -84,10 +84,16 @@ struct Kmer{
     data: u64
 }
 
+#[derive(Debug)]
+enum KmerEncodingError{
+    InvalidNucleotide(char), // contains the offending char
+    TooLong(usize), // Contains the length of the k-mer which was too long
+}
+
 impl Kmer{
-    fn from_ascii(ascii: &[u8]) -> Result<Self, String>{
+    fn from_ascii(ascii: &[u8]) -> Result<Self, KmerEncodingError>{
         if ascii.len() > 32{
-            return Err(String::from("k-mer is too large to be packed into 64 bits"));
+            return Err(KmerEncodingError::TooLong(ascii.len()));
         }
         let mut data = 0_u64;
         for c in ascii.iter() {
@@ -97,7 +103,7 @@ impl Kmer{
                 b'C' => 1,
                 b'G' => 2,
                 b'T' => 3,
-                _ => {return Err(format!("Invalid nucleotide: '{}'", *c as char));}
+                _ => {return Err(KmerEncodingError::InvalidNucleotide(*c as char))}
             };
         }
         Ok(Self{data})
@@ -208,7 +214,13 @@ impl<'a> MinimizerIndex<'a>{
         let minimizer = &kmer[min_pos .. min_pos + self.m];
 
         let mut ans: Vec<(usize,usize)> = vec![];
-        if let Some(bucket) = self.mphf.try_hash(&Kmer::from_ascii(minimizer).unwrap()){
+        let minmer = match Kmer::from_ascii(minimizer){
+            Err(KmerEncodingError::InvalidNucleotide(c)) => {return vec![]}, // No matches
+            Err(KmerEncodingError::TooLong(len)) => {panic!("Sequence length {} shorter than k", len)},
+            Ok(x) => x
+        };
+
+        if let Some(bucket) = self.mphf.try_hash(&minmer){
             let bucket_range = self.bucket_starts[bucket as usize]..self.bucket_starts[bucket as usize + 1];
             for (seq_id, seq_pos) in self.locations[bucket_range].iter(){
                 
