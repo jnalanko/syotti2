@@ -204,6 +204,8 @@ impl<'a> MinimizerIndex<'a>{
         let (locations, bucket_starts) = Self::compress_sorted_position_list(position_list, &mphf, n_mmers);
 
         log::info!("Stored {} location pairs", locations.len());
+
+        dbg!(&locations, &bucket_starts);
     
         Self{seq_storage: db, mphf, locations, bucket_starts, k, m, n_mmers}
     }
@@ -217,6 +219,7 @@ impl<'a> MinimizerIndex<'a>{
         let mut ans: Vec<(usize,usize)> = vec![];
         match self.mphf.try_hash(&Kmer::from_ascii(&minimizer).unwrap()){
             Some(bucket) => {
+                eprintln!("Hash success {}", bucket);
                 let bucket_range = self.bucket_starts[bucket as usize]..self.bucket_starts[bucket as usize + 1];
                 for (seq_id, seq_pos) in self.locations[bucket_range].iter(){
                     
@@ -305,9 +308,9 @@ ATAGCTAGTCGATGCTGATCGTAGGTTCGTAGCTGTATGCTGACCCTGATGTCTGTAGTCGTGACTGACT
 >seq2 (Substring of seq1)
 GTCGATGCTGATCGTAGGTTCGTAGCTGTATGCTGACCCTGATGTCTTGACT
 >seq3 (seq2 with a single change in the middle)
-GTCGATGCTGATCGTAGGTTCGAAGCTGTATGCTGACCCTGATGTCTTGACT
->seq4 (contains N's)
-GNCGATGCTGATCGTAGGTTCGAAGCTATTCGATGCGTATGCTGACNCCTGATGTCTTGACTATATGTCGTAGTTTCGATCGAGAGAGTATAGAANGNA"
+GTCGATGCTGATCGTAGGTTCGAAGCTGTATGCTGACCCTGATGTCTTGACT"
+//>seq4 (contains N's)
+//GNCGATGCTGATCGTAGGTTCGAAGCTATTCGATGCGTATGCTGACNCCTGATGTCTTGACTATATGTCGTAGTTTCGATCGAGAGAGTATAGAANGNA"
 .as_bytes();
 
         let k: usize = 31;
