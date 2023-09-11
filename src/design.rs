@@ -4,11 +4,11 @@ use jseqio::{seq_db::SeqDB, writer::DynamicFastXWriter};
 use log::info;
 use crate::minimizer_index::MinimizerIndex;
 
-fn hamming(a: &[u8], b: &[u8]) -> usize{
+fn hamming_distance_not_matching_N(a: &[u8], b: &[u8]) -> usize{
     assert_eq!(a.len(), b.len());
     let mut dist = 0;
     for (x,y) in a.iter().zip(b.iter()){
-        if x != y{
+        if x != y || (x == &b'N' && y == &b'N'){
             dist += 1;
         }
     }
@@ -29,7 +29,7 @@ fn mark_all_that_are_covered_by(bait: &[u8], cover_marks: &mut Vec<Vec<bool>>, i
     }
 
     for (seq_id, seq_pos) in align_starts{
-        if hamming(bait, &db.get(seq_id).seq[seq_pos..seq_pos+bait.len()]) <= hamming_distance{
+        if hamming_distance_not_matching_N(bait, &db.get(seq_id).seq[seq_pos..seq_pos+bait.len()]) <= hamming_distance{
             for i in seq_pos..seq_pos+bait.len(){
                 cover_marks[seq_id][i] = true; // This is within bounds because it was checked above
             }
@@ -75,4 +75,117 @@ pub fn run_algorithm(db: &SeqDB, index: &MinimizerIndex, bait_len: usize, hammin
     }
 
     info!("Selected {} baits", n_baits);
+}
+
+#[cfg(test)]
+mod tests{
+    use jseqio::reader;
+
+    use super::*;
+    
+    #[test]
+    fn test_hamming_distance_not_matching_N(){
+        let s = b"AACCGGTTNN";
+        let t = b"ATCTGTTANA";
+        assert_eq!(hamming_distance_not_matching_N(s,t), 6);
+    }
+
+    #[test]
+    fn basic_testcase(){
+        // Ported from Syotti 1
+
+        let d = 1;
+        let g = 2;
+        let bait_length = 5;
+
+        let seqs = [
+        "AAAAAACCCCCCATATATAGTTTTTTTT",
+        "NNNNNNNNNNNNN",
+        "AAAAAAAACTATATATGGGGGGTTTTTT", // First again
+        "AAAAAAAACTATATATGGGGGGTTTTTT", // RC of the first
+        "AANNAANNCCNNATNNATNNTTNNTTNN", // The first but N's such that there is no common 5-mer with 1 mismatch
+        "AANNAANNCTNNATNNGGNNGGNNTTNN", // The RC of the first but N's such that there is no common 5-mer with 1 mismatch
+        "NNNNNATATATANNNNNNNNN", // Island in the middle should be covered by bait TATAT
+        "TACGT", // Unique
+        "ACGTA", // RC of above
+        ].map(|s| s.as_bytes());
+
+        // Covering the first sequence should happen like this:
+        // AAAAA covers the prefix AAAAAAC and by reverse complement the suffix GTTTTTTTT.
+        // CCCCC covers CCCCCCA.
+        // TATAT covers TATATA (also the last A because of reverse complement ATATA).
+        // The Ns don't match to each other so they are all covered separately.
+        // The third input sequence is just the reverse complement of the first, so it is automatically covered.
+        let expected_baits = ["AAAAA","CCCCC","TATAT", // First sequence
+                                        "NNNNN","NNNNN","NNNNN", // Second sequence
+                                                                // 3. sequence: already covered
+                                                                // 4. sequence: already covered
+                                        "AANNA","ANNCC","NNATN","NATNN","TTNNT","NTTNN",  // 5. sequence
+                                        "AANNA","ANNCT","NNATN","NGGNN","GGNNT","NTTNN", // 6. sequence
+                                        "NNNNN","NNNNN","NNNNN", // 7. sequence
+                                        "TACGT", // 8. sequence
+                                                // 9. sequence: already covered as RC of 8.
+        ].map(|s| s.as_bytes());
+
+        let mut db = SeqDB::new();
+        for s in seqs.iter(){
+            db.push_record(jseqio::record::RefRecord{seq: s, head: b"", qual: None});
+        }
+
+        let index = MinimizerIndex::new(&db, g, 1);
+        let mut fasta_out = Vec::<u8>::new();
+        run_algorithm(&db, &index, bait_length, d, g, &mut fasta_out);
+
+        let reader = jseqio::reader::DynamicFastXReader::new(std::io::Cursor::new(fasta_out)).unwrap();
+        let bait_db = reader.into_db().unwrap();
+        let baits = bait_db.iter().map(|r| r.seq).collect::<Vec<&[u8]>>();
+
+        assert_eq!(baits, expected_baits);
+
+    }
+
+    /*
+    vector<string> seqs = {"AAAAAACCCCCCATATATAGTTTTTTTT",
+                           "NNNNNNNNNNNNN",
+                           "AAAAAAAACTATATATGGGGGGTTTTTT", // First again
+                           "AAAAAAAACTATATATGGGGGGTTTTTT", // RC of the first
+                           "AANNAANNCCNNATNNATNNTTNNTTNN", // The first but N's such that there is no common 5-mer with 1 mismatch
+                           "AANNAANNCTNNATNNGGNNGGNNTTNN", // The RC of the first but N's such that there is no common 5-mer with 1 mismatch
+                           "NNNNNATATATANNNNNNNNN", // Island in the middle should be covered by bait TATAT
+                           "TACGT", // Unique
+                           "ACGTA", // RC of above
+                           };
+    LL d = 1;
+    LL g = 2;
+    LL bait_length = 5;
+
+    FM_index fmi;
+    fmi.construct(seqs);
+    FM_NeighborCandidateFunction FM_NCF;
+    FM_NCF.init(&fmi, g);
+    NeighborFunction FM_NF;
+    FM_NF.init(&FM_NCF, &seqs, d, bait_length);
+
+    Greedy G_FM;
+    G_FM.init(&FM_NF, &seqs, bait_length, d, g, false, 1);
+    Greedy::Result result = G_FM.run();
+
+    // Covering the first sequence should happen like this:
+    // AAAAA covers the prefix AAAAAAC and by reverse complement the suffix GTTTTTTTT.
+    // CCCCC covers CCCCCCA.
+    // TATAT covers TATATA (also the last A because of reverse complement ATATA).
+    // The Ns don't match to each other so they are all covered separately.
+    // The third input sequence is just the reverse complement of the first, so it is automatically covered.
+    vector<string> expected_baits = {"AAAAA","CCCCC","TATAT", // First sequence
+                                     "NNNNN","NNNNN","NNNNN", // Second sequence
+                                                              // 3. sequence: already covered
+                                                              // 4. sequence: already covered
+                                     "AANNA","ANNCC","NNATN","NATNN","TTNNT","NTTNN",  // 5. sequence
+                                     "AANNA","ANNCT","NNATN","NGGNN","GGNNT","NTTNN", // 6. sequence
+                                     "NNNNN","NNNNN","NNNNN", // 7. sequence
+                                     "TACGT", // 8. sequence
+                                              // 9. sequence: already covered as RC of 8.
+                                      };
+
+ */   
 }
