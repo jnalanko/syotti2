@@ -151,7 +151,7 @@ impl<'a> MinimizerIndex<'a>{
         log::info!("Sorting tuples (minimizer, seq_id, seq_pos)");
         position_list.par_sort_unstable();
 
-        log::info!("Collecting distinct minimizers)");
+        log::info!("Collecting distinct minimizers");
         let mut minimizer_list: Vec<&[u8]> = vec![];
         for (seq, _, _) in position_list.iter(){
             match minimizer_list.last(){
