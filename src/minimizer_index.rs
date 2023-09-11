@@ -140,7 +140,7 @@ impl<'a> MinimizerIndex<'a>{
             })
             .collect::<Vec::<Vec::<(&[u8], u32, u32)>>>();
 
-        let position_list = parts.into_iter().fold(Vec::<(&[u8], u32, u32)>::new(), |mut x, y| {
+        let mut position_list = parts.into_iter().fold(Vec::<(&[u8], u32, u32)>::new(), |mut x, y| {
             x.extend(y); x
         });
 
@@ -150,21 +150,38 @@ impl<'a> MinimizerIndex<'a>{
             x.extend(y); x
         }); */
 
-        let mut minimizer_list = position_list.iter().map(|(s,_,_)| *s).collect::<Vec<&[u8]>>();
+        log::info!("Sorting tuples (minimizer, seq_id, seq_pos)");
+        position_list.par_sort_unstable();
 
-        log::info!("Sorting minimizers");
-        minimizer_list.par_sort_unstable();
-        
+        log::info!("Collecting distinct minimizers)");
+        let mut minimizer_list: Vec<&[u8]> = vec![];
+        for (seq, _, _) in position_list.iter(){
+            match minimizer_list.last(){
+                Some(last) => {
+                    if seq != last{
+                        minimizer_list.push(seq);
+                    };
+                },
+                None => { minimizer_list.push(seq); }
+            }
+        }
+
         log::info!("Removing duplicate minimizers");
         minimizer_list.dedup();
+        minimizer_list.shrink_to_fit();
+
+        log::info!("Found {} distinct minimizers", minimizer_list.len());
 
         log::info!("Building an MPHF for the minimizers");
         let n_mmers = minimizer_list.len();
         let mphf = boomphf::Mphf::<&[u8]>::new_parallel(1.7, minimizer_list.as_slice(), None);
         
+        log::info!("Compressing position lists");
         let (locations, bucket_starts) = Self::compress_position_list(position_list, &mphf, n_mmers);
+
+        log::info!("Stored {} location pairs", locations.len());
     
-        Self{seq_storage: db, mphf, locations, bucket_starts, k: k as usize, m: m as usize, n_mmers}
+        Self{seq_storage: db, mphf, locations, bucket_starts, k, m, n_mmers}
     }
 
     // Returns all occurrences of the query k-mer
