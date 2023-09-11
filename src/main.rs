@@ -59,7 +59,7 @@ fn main() {
             .value_parser(clap::value_parser!(usize))
         )
         .arg(Arg::new("minimizer-len")
-            .help("Length of minimizers in indexing. Must be less of equal to seed-len")
+            .help("Length of minimizers in indexing. Must be less or equal to seed-len")
             .short('m')
             .long("minimizer-len")
             .default_value("12")
