@@ -203,6 +203,7 @@ impl<'a> MinimizerIndex<'a>{
         let (locations, bucket_starts) = Self::compress_sorted_position_list(position_list, &mphf, n_mmers);
 
         log::info!("Stored {} location pairs", locations.len());
+        log::info!("Average bucket size: {:.2}", locations.len() as f64 / (bucket_starts.len() as f64 - 1.0)); // -1 because of end sentinel
     
         Self{seq_storage: db, mphf, locations, bucket_starts, k, m, n_mmers}
     }
