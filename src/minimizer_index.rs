@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use rayon::prelude::*;
 use indicatif::ProgressIterator;
-use jseqio::seq_db::SeqDB;
+use jseqio::{seq_db::SeqDB};
 pub struct MinimizerIndex<'a>{
     seq_storage: &'a jseqio::seq_db::SeqDB,
     mphf: boomphf::Mphf<Kmer>, // Minimal perfect hash function
@@ -268,9 +268,9 @@ impl<'a> MinimizerIndex<'a>{
 mod tests{
 
     use std::io::BufReader;
-
     use super::*;
     use jseqio::reader::*;
+    use jseqio::record::*;
 
     fn number_of_kmers(seq_len: usize, k: usize) -> usize { // TODO: use everywhere
         std::cmp::max(0, (seq_len as i64) - (k as i64) + 1) as usize
@@ -291,34 +291,13 @@ mod tests{
         assert_eq!(positions, vec![2,22,30,42])
     }
 
-    #[test]
-    fn test_index_lookup(){
-
-        let input = "\
->seq1
-ATAGCTAGTCGATGCTGATCGTAGGTTCGTAGCTGTATGCTGACCCTGATGTCTGTAGTCGTGACTGACT
->seq2 (Substring of seq1)
-GTCGATGCTGATCGTAGGTTCGTAGCTGTATGCTGACCCTGATGTCTTGACT
->seq3 (seq2 with a single change in the middle)
-GTCGATGCTGATCGTAGGTTCGAAGCTGTATGCTGACCCTGATGTCTTGACT"
-//>seq4 (contains N's)
-//GNCGATGCTGATCGTAGGTTCGAAGCTATTCGATGCGTATGCTGACNCCTGATGTCTTGACTATATGTCGTAGTTTCGATCGAGAGAGTATAGAANGNA"
-.as_bytes();
-
-        let k: usize = 31;
-        let m: usize = 10;
+    fn test_vs_hash_table(db: &SeqDB, k: usize, m: usize){
         
         // Build index
-        let mut reference = DynamicFastXReader::new(BufReader::new(input)).unwrap();
-        let db = reference.into_db().unwrap();
         let index = MinimizerIndex::new(&db, k, m);
         
         // Read sequences
-        let mut reader = DynamicFastXReader::new(BufReader::new(input)).unwrap();
-        let mut seqs : Vec<Vec<u8>> = vec![];
-        while let Some(rec) = reader.read_next().unwrap(){
-            seqs.push(rec.seq.to_owned());
-        }
+        let seqs = db.iter().map(|rec| rec.seq.to_owned()).collect::<Vec<Vec<u8>>>();
 
         // Build true k-mer occurrences map
         let mut true_kmer_occurrences = std::collections::HashMap::<Vec<u8>, Vec<(usize, usize)>>::new();
@@ -349,4 +328,16 @@ GTCGATGCTGATCGTAGGTTCGAAGCTGTATGCTGACCCTGATGTCTTGACT"
         assert_eq!(index.lookup(random_kmer).len(), 0);
     }
 
+    #[test]
+    fn test_index_lookup(){
+
+        let mut db = SeqDB::new();
+        db.push_record(RefRecord{head: b"seq1", seq: b"ATAGCTAGTCGATGCTGATCGTAGGTTCGTAGCTGTATGCTGACCCTGATGTCTGTAGTCGTGACTGACT", qual: None});
+        db.push_record(RefRecord{head: b"seq2 (substring of seq1)", seq: b"GTCGATGCTGATCGTAGGTTCGTAGCTGTATGCTGACCCTGATGTCTTGACT", qual: None});
+        db.push_record(RefRecord{head: b"seq3 (seq2 with a single change in the middle)", seq: b"GTCGATGCTGATCGTAGGTTCGAAGCTGTATGCTGACCCTGATGTCTTGACT", qual: None});
+
+        test_vs_hash_table(&db, 31, 10);
+    }
+
+    // TODO: test handling Ns
 }
