@@ -175,6 +175,7 @@ impl<'a> MinimizerIndex<'a>{
         log::info!("Building an MPHF for the minimizers");
         let n_mmers = minimizer_list.len();
         let mphf = boomphf::Mphf::<&[u8]>::new_parallel(1.7, minimizer_list.as_slice(), None);
+        drop(minimizer_list);
         
         log::info!("Compressing position lists");
         let (locations, bucket_starts) = Self::compress_position_list(position_list, &mphf, n_mmers);
