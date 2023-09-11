@@ -88,7 +88,7 @@ impl<'a> MinimizerIndex<'a>{
 
     fn compress_position_list(mut L: Vec::<(&[u8], u32, u32)>, h: &boomphf::Mphf<&[u8]>, n_minimizers: usize) -> (Vec<(u32, u32)>, Vec<usize>){
         
-        L.par_sort();
+        L.par_sort_unstable();
         
         let mut bucket_sizes: Vec::<usize> = vec![0; n_minimizers]; // Bucket sizes in left-to-right order of buckets
         for (seq, _, _) in L.iter(){
