@@ -127,18 +127,28 @@ impl<'a> MinimizerIndex<'a>{
         
         log::info!("Finding minimizers");
 
-        let position_list = (0..db.sequence_count()).into_par_iter()
+        let parts = (0..db.sequence_count()).into_par_iter()
             .map(|i|{
                 (i, get_minimizer_positions_with_return(db.get(i).seq, k, m))
             })
             .map(|(i, pos_list)|{
                 let debug = pos_list.iter().map(|p| (&db.get(i).seq[*p..*p+m], i as u32, *p as u32)).collect::<Vec<(&[u8], u32, u32)>>();
                 debug
-        }).fold(Vec::<(&[u8], u32, u32)>::new, |mut x, y| {
+            }) // Now we have lists of (minimizer, seq_id, seq_pos) tuples
+            .fold(Vec::<(&[u8], u32, u32)>::new, |mut x, y| {
+                x.extend(y); x
+            })
+            .collect::<Vec::<Vec::<(&[u8], u32, u32)>>>();
+
+        let position_list = parts.into_iter().fold(Vec::<(&[u8], u32, u32)>::new(), |mut x, y| {
+            x.extend(y); x
+        });
+
+        /* .fold(Vec::<(&[u8], u32, u32)>::new, |mut x, y| {
             x.extend(y); x
         }).reduce(Vec::<(&[u8], u32, u32)>::new, |mut x, y| {
             x.extend(y); x
-        });
+        }); */
 
         let mut minimizer_list = position_list.iter().map(|(s,_,_)| *s).collect::<Vec<&[u8]>>();
 
