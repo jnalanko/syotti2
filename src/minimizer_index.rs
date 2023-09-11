@@ -1,5 +1,6 @@
 use rayon::prelude::*;
-use jseqio::{seq_db::SeqDB};
+use jseqio::seq_db::SeqDB;
+
 pub struct MinimizerIndex<'a>{
     seq_storage: &'a jseqio::seq_db::SeqDB,
     mphf: boomphf::Mphf<Kmer>, // Minimal perfect hash function
@@ -11,9 +12,10 @@ pub struct MinimizerIndex<'a>{
 }
 
 // Keeps only parts of length at least k
-fn split_at_non_ACGT(v: &[u8], k: usize) -> Vec<Vec<u8>>{
+#[allow(dead_code)]
+fn split_at_non_acgt(v: &[u8], k: usize) -> Vec<Vec<u8>>{
     let mut parts = Vec::<Vec::<u8>>::new();
-    let mut start = 0 as usize;
+    let mut start = 0_usize;
     for i in 0 .. v.len() + 1 {
         if i == v.len() || !is_dna(v[i]) { // One-past-the-end of a part
             if i - start >= k {
@@ -34,7 +36,7 @@ fn is_dna(c: u8) -> bool{
 }
 
 fn get_minimizer_position(kmer: &[u8], m: usize) -> usize{
-    let mut minimizer = &kmer[0 .. 0+m];
+    let mut minimizer = &kmer[0 .. m];
     let mut min_pos = 0;
     for j in 1 .. (kmer.len() as i64) - (m as i64) + 1 {
         let j = j as usize;
@@ -43,7 +45,7 @@ fn get_minimizer_position(kmer: &[u8], m: usize) -> usize{
             min_pos = j;
         }
     }
-    return min_pos;
+    min_pos
 }
 
 // The output will be stored to the positions-vector
@@ -62,7 +64,7 @@ fn get_minimizer_positions(seq: &[u8], positions: &mut Vec<usize>, k: usize, m: 
 
         let min_pos = i + get_minimizer_position(kmer, m);
 
-        if positions.len() == 0 || positions[positions.len()-1] != min_pos {
+        if positions.is_empty() || positions[positions.len()-1] != min_pos {
             positions.push(min_pos)
         }
 
@@ -87,10 +89,10 @@ impl Kmer{
         if ascii.len() > 32{
             return Err(()); // Does not fit in u64
         }
-        let mut data = 0 as u64;
-        for i in 0 .. ascii.len(){
+        let mut data = 0_u64;
+        for c in ascii.iter() {
             data <<= 2;
-            data |= match ascii[i]{
+            data |= match *c{
                 b'A' => 0,
                 b'C' => 1,
                 b'G' => 2,
@@ -104,7 +106,7 @@ impl Kmer{
 
 impl<'a> MinimizerIndex<'a>{
 
-    fn compress_sorted_position_list(mut L: Vec::<(Kmer, u32, u32)>, h: &boomphf::Mphf<Kmer>, n_minimizers: usize) -> (Vec<(u32, u32)>, Vec<usize>){
+    fn compress_sorted_position_list(L: Vec::<(Kmer, u32, u32)>, h: &boomphf::Mphf<Kmer>, n_minimizers: usize) -> (Vec<(u32, u32)>, Vec<usize>){
         
         let mut bucket_sizes: Vec::<usize> = vec![0; n_minimizers]; // Bucket sizes in left-to-right order of buckets
         for (seq, _, _) in L.iter(){
@@ -112,10 +114,10 @@ impl<'a> MinimizerIndex<'a>{
         }
 
         // Get the starting positions of buckets
-        let mut sum = 0 as usize;
+        let mut sum = 0_usize;
         let mut bucket_starts = vec![0];
-        for i in 0 .. bucket_sizes.len(){
-            sum += bucket_sizes[i];
+        for b in bucket_sizes.iter(){
+            sum += b;
             bucket_starts.push(sum)
         }
         bucket_starts.shrink_to_fit();
@@ -206,26 +208,23 @@ impl<'a> MinimizerIndex<'a>{
         let minimizer = &kmer[min_pos .. min_pos + self.m];
 
         let mut ans: Vec<(usize,usize)> = vec![];
-        match self.mphf.try_hash(&Kmer::from_ascii(&minimizer).unwrap()){
-            Some(bucket) => {
-                let bucket_range = self.bucket_starts[bucket as usize]..self.bucket_starts[bucket as usize + 1];
-                for (seq_id, seq_pos) in self.locations[bucket_range].iter(){
-                    
-                    // Start of the k-mer that contains this minimizer occurrence:
-                    let start = *seq_pos as i64 - min_pos as i64;
+        if let Some(bucket) = self.mphf.try_hash(&Kmer::from_ascii(minimizer).unwrap()){
+            let bucket_range = self.bucket_starts[bucket as usize]..self.bucket_starts[bucket as usize + 1];
+            for (seq_id, seq_pos) in self.locations[bucket_range].iter(){
+                
+                // Start of the k-mer that contains this minimizer occurrence:
+                let start = *seq_pos as i64 - min_pos as i64;
 
-                    // Check if this occurrence is real
-                    if start >= 0 && start + self.k as i64 <= self.seq_storage.get(*seq_id as usize).seq.len() as i64 {
-                        // k-mer is within bounds of the sequence
-                        let start = start as usize;
-                        let candidate = &self.seq_storage.get(*seq_id as usize).seq[start .. start + self.k];
-                        if candidate == kmer{
-                            ans.push((*seq_id as usize, start));
-                        }
+                // Check if this occurrence is real
+                if start >= 0 && start + self.k as i64 <= self.seq_storage.get(*seq_id as usize).seq.len() as i64 {
+                    // k-mer is within bounds of the sequence
+                    let start = start as usize;
+                    let candidate = &self.seq_storage.get(*seq_id as usize).seq[start .. start + self.k];
+                    if candidate == kmer{
+                        ans.push((*seq_id as usize, start));
                     }
                 }
-            },
-            None => (), // No matches
+            }
         }
 
         ans
@@ -264,8 +263,6 @@ impl<'a> MinimizerIndex<'a>{
 #[cfg(test)]
 mod tests{
 
-    use std::arch::x86_64::_CMP_TRUE_UQ;
-
     use super::*;
     use jseqio::record::*;
     use rand_chacha::{self, rand_core::{SeedableRng, RngCore}};
@@ -289,7 +286,7 @@ mod tests{
         assert_eq!(positions, vec![2,22,30,42])
     }
 
-    fn get_true_kmer_occurrences(seqs: &Vec<Vec<u8>>, k: usize) -> std::collections::HashMap<Vec<u8>, Vec<(usize, usize)>>{
+    fn get_true_kmer_occurrences(seqs: &[Vec<u8>], k: usize) -> std::collections::HashMap<Vec<u8>, Vec<(usize, usize)>>{
         let mut true_kmer_occurrences = std::collections::HashMap::<Vec<u8>, Vec<(usize, usize)>>::new();
         for (seq_id, seq) in seqs.iter().enumerate(){
             for i in 0 .. number_of_kmers(seq.len(), k){
@@ -308,7 +305,7 @@ mod tests{
     fn test_vs_hash_table(db: &SeqDB, k: usize, m: usize){
         
         // Build index
-        let index = MinimizerIndex::new(&db, k, m);
+        let index = MinimizerIndex::new(db, k, m);
         
         // Read sequences
         let seqs = db.iter().map(|rec| rec.seq.to_owned()).collect::<Vec<Vec<u8>>>();
@@ -321,7 +318,7 @@ mod tests{
             for i in 0 .. number_of_kmers(seq.len(), k){
                 let kmer = &seq[i..i+k];
                 let occs = index.lookup(kmer);
-                eprintln!("{} {:?} {:?}", to_ascii(&kmer), &occs, &true_kmer_occurrences[kmer]);
+                eprintln!("{} {:?} {:?}", to_ascii(kmer), &occs, &true_kmer_occurrences[kmer]);
                 assert_eq!(occs, true_kmer_occurrences[kmer]);
             }
         }
@@ -358,6 +355,7 @@ mod tests{
         // Generate 100 random sequences of length 100
         for i in 0 .. 100 {
             let mut seq = vec![0; 100];
+            #[allow(clippy::needless_range_loop)] // Clearer this way IMO
             for j in 0 .. 100 {
                 seq[j] = match rng.next_u64() % 4 {
                     0 => b'A',
@@ -381,6 +379,8 @@ mod tests{
 
         // For queries, do all possible 6-mers
         let mut queries = vec![vec![0; k]; 4usize.pow(k as u32)];
+        
+        #[allow(clippy::needless_range_loop)] // Clearer this way IMO
         for i in 0 .. 4usize.pow(k as u32){
             let mut j = i;
             for l in 0 .. k {
