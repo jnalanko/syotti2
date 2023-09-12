@@ -110,22 +110,13 @@ impl Kmer{
     }
 }
 
-/*
-        // Find out the bucket sizes
-        for chunk in L.chunks(batch_size){
-            
-            let mut hash_values = Vec::<u64>::new();
-            chunk.par_iter().map(
-                |(minmer, _, _)| {
-                    h.hash(minmer)
-                }
-            ).collect_into_vec(&mut hash_values);
+struct MinimzerIndexBuilder<'a>{
+    seq_storage: &'a SeqDB,
+    k: usize,
+    m: usize,
+}
 
-            hash_values.iter().for_each(|x| bucket_sizes[*x as usize] += 1);
-        }
-*/
-
-impl<'a> MinimizerIndex<'a>{
+impl<'a> MinimzerIndexBuilder<'a>{
 
     // Returns the longest prefix of the slice that consists of elements that are 
     // all the same according to the given equivalence relation predicate
@@ -204,7 +195,16 @@ impl<'a> MinimizerIndex<'a>{
         if m > k {
             panic!("m > k");
         }
-        
+        Self{seq_storage: &db, k, m}
+    }
+
+    pub fn build(self) -> MinimizerIndex<'a>{
+
+        // Take into local variables to avoid writing self all the time
+        let db = self.seq_storage;
+        let k = self.k;
+        let m = self.m;
+
         log::info!("Finding minimizers");
 
         let parts = (0..db.sequence_count()).into_par_iter()
@@ -261,8 +261,12 @@ impl<'a> MinimizerIndex<'a>{
         log::info!("Stored {} location pairs", locations.len());
         log::info!("Average bucket size: {:.2}", locations.len() as f64 / (bucket_starts.len() as f64 - 1.0)); // -1 because of end sentinel
     
-        Self{seq_storage: db, mphf, locations, bucket_starts, k, m, n_mmers}
+        MinimizerIndex{seq_storage: db, mphf, locations, bucket_starts, k, m, n_mmers}
     }
+
+}
+
+impl<'a> MinimizerIndex<'a>{
 
     // Returns all occurrences of the query k-mer
     pub fn lookup(&self, kmer: &[u8]) -> Vec<(usize, usize)>{
@@ -299,33 +303,9 @@ impl<'a> MinimizerIndex<'a>{
         ans
     }
 
-    /*
-    fn print_space_breakdown(&self){
-        let seqs_bytes = bincode::serialize(&self.seq_storage).unwrap().len();
-        let mphf_bytes = bincode::serialize(&self.mphf).unwrap().len();
-        let locations_bytes = bincode::serialize(&self.locations).unwrap().len();
-
-        eprintln!("Seqs storage:\t\t{} bytes\nMPHF:\t\t{} bytes\nLocations:\t{} bytes\n", seqs_bytes, mphf_bytes, locations_bytes);
-
-        let mut total_kmers = 0 as usize;
-        let mut total_nucleotides = 0 as usize;
-        for i in 0 .. self.seq_storage.number_of_sequences() {
-            let seq =  self.seq_storage.get(i);
-            total_nucleotides += seq.len();
-            if seq.len() >= self.k{
-                total_kmers += seq.len() - self.k + 1;
-            }
-        }
-
-        eprintln!("Number of k-mers including duplicates: {}", total_kmers);
-        eprintln!("Total nucleotides: {}", total_nucleotides);
-        eprintln!("Seq storage Bits/k-mer: {}", (seqs_bytes * 8) as f64 / total_kmers as f64);
-        eprintln!("Seq storage Bits/nucleotide: {}", (seqs_bytes * 8) as f64 / total_nucleotides as f64);
-        eprintln!("MPHF Bits/k-mer: {}", (mphf_bytes * 8) as f64 / total_kmers as f64);
-        eprintln!("MPHF Bits/m-mer: {}", (mphf_bytes * 8) as f64 / self.n_mmers as f64);
-        eprintln!("Locations Bits/k-mer: {}", (locations_bytes * 8) as f64 / total_kmers as f64);  
+    pub fn new(db: &'a SeqDB, k: usize, m: usize) -> Self{
+        MinimzerIndexBuilder::new(db, k, m).build()
     }
-    */
 
 }
 
