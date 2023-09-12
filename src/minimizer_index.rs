@@ -195,21 +195,20 @@ mod build{
         bucket_starts
     }
 
-    // This mutates bucket_starts internally but restores it back to the original configuration before returning
-    fn store_location_pairs(L: Vec::<(Kmer, u32, u32)>, h: &boomphf::Mphf<Kmer>, bucket_starts: &mut Vec<usize>, bucket_sizes: Vec<usize>,) -> Vec<(u32, u32)>{
+    fn store_location_pairs(L: Vec::<(Kmer, u32, u32)>, h: &boomphf::Mphf<Kmer>, bucket_starts: &Vec<usize>, bucket_sizes: Vec<usize>,) -> Vec<(u32, u32)>{
         // Store the locations
         let mut locations: Vec::<(u32, u32)> = vec![(0,0); *bucket_starts.last().unwrap()]; // Will have an end sentinel
-        for (minmer, seq_id, pos) in L{
-            let bucket_id = h.hash(&minmer);
-            locations[bucket_starts[bucket_id as usize]] = (seq_id, pos);
-            bucket_starts[bucket_id as usize] += 1;
-        }
 
-        // Rewind back the bucket starts
-        for (i,s) in bucket_sizes.iter().enumerate(){
-            bucket_starts[i] -= s;
+        let mut L_tail = &L[..];
+        while !L_tail.is_empty(){
+            let prefix = get_prefix_run(L_tail, |(minmer, _, _), (minmer2, _, _)| minmer == minmer2);
+            let bucket_id = h.hash(&prefix[0].0);
+            let start = bucket_starts[bucket_id as usize];
+            for i in 0 .. prefix.len(){
+                locations[start + i] = (prefix[i].1, prefix[i].2);
+            }
+            L_tail = L_tail.split_at(prefix.len()).1;
         }
-
         locations
     }
 
@@ -232,12 +231,9 @@ mod build{
             })
             .collect::<Vec::<Vec::<(Kmer, u32, u32)>>>();
 
-        let mut position_list = parts.into_iter().fold(Vec::new(), |mut x, y| {
+        parts.into_iter().fold(Vec::new(), |mut x, y| {
             x.extend(y); x
-        });
-
-        position_list
-        
+        })   
     }
 
     fn collect_distinct(position_list: &Vec<(Kmer, u32, u32)>) -> Vec<Kmer>{
@@ -260,9 +256,9 @@ mod build{
         log::info!("Computing bucket sizes");
         let bucket_sizes = get_bucket_sizes(&L, h, n_minimizers);
         log::info!("Computing bucket starts");
-        let mut bucket_starts = get_bucket_starts(&bucket_sizes);
+        let bucket_starts = get_bucket_starts(&bucket_sizes);
         log::info!("Storing location pairs to buckets");
-        let locations = store_location_pairs(L, h, &mut bucket_starts, bucket_sizes);
+        let locations = store_location_pairs(L, h, &bucket_starts, bucket_sizes);
 
         (locations, bucket_starts)
     }
