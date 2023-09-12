@@ -110,13 +110,45 @@ impl Kmer{
     }
 }
 
+/*
+        // Find out the bucket sizes
+        for chunk in L.chunks(batch_size){
+            
+            let mut hash_values = Vec::<u64>::new();
+            chunk.par_iter().map(
+                |(minmer, _, _)| {
+                    h.hash(minmer)
+                }
+            ).collect_into_vec(&mut hash_values);
+
+            hash_values.iter().for_each(|x| bucket_sizes[*x as usize] += 1);
+        }
+*/
+
 impl<'a> MinimizerIndex<'a>{
+
+    // Returns the longest prefix of the slice that consists of elements that are 
+    // all the same according to the given equivalence relation predicate
+    fn get_prefix_run<T, F: Fn(&T, &T) -> bool>(slice: &[T], is_same: F) -> &[T]{
+        let first_different = slice.iter().position(|x| !is_same(x, &slice[0]));
+        match first_different{
+            Some(i) => &slice[0..i],
+            None => slice
+        }
+    }
 
     fn compress_sorted_position_list(L: Vec::<(Kmer, u32, u32)>, h: &boomphf::Mphf<Kmer>, n_minimizers: usize) -> (Vec<(u32, u32)>, Vec<usize>){
         
+        let batch_size = 1_000_000_000_usize;
+
         let mut bucket_sizes: Vec::<usize> = vec![0; n_minimizers]; // Bucket sizes in left-to-right order of buckets
-        for (seq, _, _) in L.iter(){
-            bucket_sizes[h.hash(seq) as usize] += 1;
+
+        // Find out the bucket sizes
+        let mut L_tail = &L[..];
+        while !L_tail.is_empty(){
+            let prefix = Self::get_prefix_run(L_tail, |(minmer, _, _), (minmer2, _, _)| minmer == minmer2);
+            bucket_sizes[h.hash(&prefix[0].0) as usize] = prefix.len();
+            L_tail = L_tail.split_at(prefix.len()).1;
         }
 
         // Get the starting positions of buckets
