@@ -176,7 +176,7 @@ mod build{
         let mut L_tail = &L[..];
         while !L_tail.is_empty(){
             let prefix = get_prefix_run(L_tail, |(minmer, _, _), (minmer2, _, _)| minmer == minmer2);
-            bucket_sizes[h.hash(&prefix[0].0) as usize] = prefix.len();
+            bucket_sizes[h.hash(&prefix[0].0) as usize] = prefix.len(); // Prefix is nonempty because L_tail was nonempty
             L_tail = L_tail.split_at(prefix.len()).1;
         }
 
