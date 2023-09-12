@@ -137,8 +137,7 @@ impl<'a> MinimizerIndex<'a>{
         }
     }
 
-    fn compress_sorted_position_list(L: Vec::<(Kmer, u32, u32)>, h: &boomphf::Mphf<Kmer>, n_minimizers: usize) -> (Vec<(u32, u32)>, Vec<usize>){
-
+    fn get_bucket_sizes(L: &Vec::<(Kmer, u32, u32)>, h: &boomphf::Mphf<Kmer>, n_minimizers: usize) -> Vec<usize>{
         let mut bucket_sizes: Vec::<usize> = vec![0; n_minimizers]; // Bucket sizes in left-to-right order of buckets
 
         // Find out the bucket sizes
@@ -149,6 +148,10 @@ impl<'a> MinimizerIndex<'a>{
             L_tail = L_tail.split_at(prefix.len()).1;
         }
 
+        bucket_sizes
+    }
+
+    fn get_bucket_starts(bucket_sizes: &Vec<usize>) -> Vec<usize>{
         // Get the starting positions of buckets
         let mut sum = 0_usize;
         let mut bucket_starts = vec![0];
@@ -157,7 +160,11 @@ impl<'a> MinimizerIndex<'a>{
             bucket_starts.push(sum)
         }
         bucket_starts.shrink_to_fit();
+        bucket_starts
+    }
 
+    // This mutates bucket_starts internally but restores it back to the original configuration before returning
+    fn store_location_pairs(L: &Vec::<(Kmer, u32, u32)>, h: &boomphf::Mphf<Kmer>, bucket_starts: &mut Vec<usize>, bucket_sizes: Vec<usize>,) -> Vec<(u32, u32)>{
         // Store the locations
         let batch_size = 1_000_000_000_usize;
         let mut locations: Vec::<(u32, u32)> = vec![(0,0); *bucket_starts.last().unwrap()]; // Will have end sentinel
@@ -180,6 +187,15 @@ impl<'a> MinimizerIndex<'a>{
         for (i,s) in bucket_sizes.iter().enumerate(){
             bucket_starts[i] -= s;
         }
+
+        locations
+    }
+
+    fn compress_sorted_position_list(L: Vec::<(Kmer, u32, u32)>, h: &boomphf::Mphf<Kmer>, n_minimizers: usize) -> (Vec<(u32, u32)>, Vec<usize>){
+
+        let bucket_sizes = Self::get_bucket_sizes(&L, h, n_minimizers);
+        let mut bucket_starts = Self::get_bucket_starts(&bucket_sizes);
+        let locations = Self::store_location_pairs(&L, h, &mut bucket_starts, bucket_sizes);
 
         (locations, bucket_starts)
     }
