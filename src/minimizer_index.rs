@@ -383,15 +383,6 @@ mod build{
         locations
     }
 
-    fn compress_sorted_position_list(L: Vec::<(Kmer, u32, u32)>, h: &boomphf::Mphf<Kmer>, n_minimizers: usize) -> (Vec<(u32, u32)>, Vec<usize>){
-
-        let bucket_sizes = get_bucket_sizes(&L, h, n_minimizers);
-        let mut bucket_starts = get_bucket_starts(&bucket_sizes);
-        let locations = store_location_pairs(&L, h, &mut bucket_starts, bucket_sizes);
-
-        (locations, bucket_starts)
-    }
-
     fn build_position_list<'a>(db: &'a SeqDB, k: usize, m: usize) -> Vec<(Kmer, u32, u32)>{
 
         let parts = (0..db.sequence_count()).into_par_iter()
@@ -433,6 +424,19 @@ mod build{
         }
         minimizer_list
     }
+
+    fn compress_sorted_position_list(L: Vec::<(Kmer, u32, u32)>, h: &boomphf::Mphf<Kmer>, n_minimizers: usize) -> (Vec<(u32, u32)>, Vec<usize>){
+
+        log::info!("Computing bucket sizes");
+        let bucket_sizes = get_bucket_sizes(&L, h, n_minimizers);
+        log::info!("Computing bucket starts");
+        let mut bucket_starts = get_bucket_starts(&bucket_sizes);
+        log::info!("Storing location pairs to buckets");
+        let locations = store_location_pairs(&L, h, &mut bucket_starts, bucket_sizes);
+
+        (locations, bucket_starts)
+    }
+
 
     pub fn build(db: &SeqDB, k: usize, m: usize) -> MinimizerIndex{
 
