@@ -191,21 +191,12 @@ impl<'a> MinimzerIndexBuilder<'a>{
         (locations, bucket_starts)
     }
 
-    fn new(db: &'a SeqDB, k: usize, m: usize) -> Self{
-        if m > k {
-            panic!("m > k");
-        }
-        Self{seq_storage: &db, k, m}
-    }
-
-    fn build(self) -> MinimizerIndex<'a>{
+    fn build_position_list(&self) -> Vec<(Kmer, u32, u32)>{
 
         // Take into local variables to avoid writing self all the time
         let db = self.seq_storage;
         let k = self.k;
         let m = self.m;
-
-        log::info!("Finding minimizers");
 
         let parts = (0..db.sequence_count()).into_par_iter()
             .map(|i|{
@@ -228,10 +219,11 @@ impl<'a> MinimzerIndexBuilder<'a>{
             x.extend(y); x
         });
 
-        log::info!("Sorting tuples (minimizer, seq_id, seq_pos)");
-        position_list.par_sort_unstable();
+        position_list
+        
+    }
 
-        log::info!("Collecting distinct minimizers");
+    fn collect_distinct(position_list: &Vec<(Kmer, u32, u32)>) -> Vec<Kmer>{
         let mut minimizer_list: Vec<Kmer> = vec![];
         for (minmer, _, _) in position_list.iter(){
             match minimizer_list.last(){
@@ -243,6 +235,26 @@ impl<'a> MinimzerIndexBuilder<'a>{
                 None => { minimizer_list.push(*minmer); }
             }
         }
+        minimizer_list
+    }
+
+    fn new(db: &'a SeqDB, k: usize, m: usize) -> Self{
+        if m > k {
+            panic!("m > k");
+        }
+        Self{seq_storage: &db, k, m}
+    }
+
+    fn build(self) -> MinimizerIndex<'a>{
+
+        log::info!("Extracting minimizers");
+        let mut position_list = self.build_position_list();
+
+        log::info!("Sorting tuples (minimizer, seq_id, seq_pos)");
+        position_list.par_sort_unstable();
+
+        log::info!("Collecting distinct minimizers");
+        let mut minimizer_list = Self::collect_distinct(&position_list);
 
         log::info!("Removing duplicate minimizers");
         minimizer_list.dedup();
@@ -261,7 +273,7 @@ impl<'a> MinimzerIndexBuilder<'a>{
         log::info!("Stored {} location pairs", locations.len());
         log::info!("Average bucket size: {:.2}", locations.len() as f64 / (bucket_starts.len() as f64 - 1.0)); // -1 because of end sentinel
     
-        MinimizerIndex{seq_storage: db, mphf, locations, bucket_starts, k, m, n_mmers}
+        MinimizerIndex{seq_storage: self.seq_storage, mphf, locations, bucket_starts, k: self.k, m: self.m, n_mmers}
     }
 
 }
