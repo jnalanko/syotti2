@@ -110,173 +110,6 @@ impl Kmer{
     }
 }
 
-struct MinimzerIndexBuilder<'a>{
-    seq_storage: &'a SeqDB,
-    k: usize,
-    m: usize,
-}
-
-impl<'a> MinimzerIndexBuilder<'a>{
-
-    // Returns the longest prefix of the slice that consists of elements that are 
-    // all the same according to the given equivalence relation predicate
-    fn get_prefix_run<T, F: Fn(&T, &T) -> bool>(slice: &[T], is_same: F) -> &[T]{
-        let first_different = slice.iter().position(|x| !is_same(x, &slice[0]));
-        match first_different{
-            Some(i) => &slice[0..i],
-            None => slice
-        }
-    }
-
-    fn get_bucket_sizes(L: &Vec::<(Kmer, u32, u32)>, h: &boomphf::Mphf<Kmer>, n_minimizers: usize) -> Vec<usize>{
-        let mut bucket_sizes: Vec::<usize> = vec![0; n_minimizers]; // Bucket sizes in left-to-right order of buckets
-
-        // Find out the bucket sizes
-        let mut L_tail = &L[..];
-        while !L_tail.is_empty(){
-            let prefix = Self::get_prefix_run(L_tail, |(minmer, _, _), (minmer2, _, _)| minmer == minmer2);
-            bucket_sizes[h.hash(&prefix[0].0) as usize] = prefix.len();
-            L_tail = L_tail.split_at(prefix.len()).1;
-        }
-
-        bucket_sizes
-    }
-
-    fn get_bucket_starts(bucket_sizes: &Vec<usize>) -> Vec<usize>{
-        // Get the starting positions of buckets
-        let mut sum = 0_usize;
-        let mut bucket_starts = vec![0];
-        for b in bucket_sizes.iter(){
-            sum += b;
-            bucket_starts.push(sum)
-        }
-        bucket_starts.shrink_to_fit();
-        bucket_starts
-    }
-
-    // This mutates bucket_starts internally but restores it back to the original configuration before returning
-    fn store_location_pairs(L: &Vec::<(Kmer, u32, u32)>, h: &boomphf::Mphf<Kmer>, bucket_starts: &mut Vec<usize>, bucket_sizes: Vec<usize>,) -> Vec<(u32, u32)>{
-        // Store the locations
-        let batch_size = 1_000_000_000_usize;
-        let mut locations: Vec::<(u32, u32)> = vec![(0,0); *bucket_starts.last().unwrap()]; // Will have end sentinel
-        for chunk in L.chunks(batch_size){
-            let mut hash_values = Vec::<(u64, u32, u32)>::new();
-            chunk.par_iter().map(
-                |(minmer, seq_id, pos)| {
-                    (h.hash(minmer), *seq_id, *pos)
-                }
-            ).collect_into_vec(&mut hash_values);
-            
-            hash_values.iter().for_each(|(bucket_id, seq_id, pos)|{
-                    locations[bucket_starts[*bucket_id as usize]] = (*seq_id, *pos);    
-                    bucket_starts[*bucket_id as usize] += 1;
-                }
-            );
-        }
-
-        // Rewind back the bucket starts
-        for (i,s) in bucket_sizes.iter().enumerate(){
-            bucket_starts[i] -= s;
-        }
-
-        locations
-    }
-
-    fn compress_sorted_position_list(L: Vec::<(Kmer, u32, u32)>, h: &boomphf::Mphf<Kmer>, n_minimizers: usize) -> (Vec<(u32, u32)>, Vec<usize>){
-
-        let bucket_sizes = Self::get_bucket_sizes(&L, h, n_minimizers);
-        let mut bucket_starts = Self::get_bucket_starts(&bucket_sizes);
-        let locations = Self::store_location_pairs(&L, h, &mut bucket_starts, bucket_sizes);
-
-        (locations, bucket_starts)
-    }
-
-    fn build_position_list(&self) -> Vec<(Kmer, u32, u32)>{
-
-        // Take into local variables to avoid writing self all the time
-        let db = self.seq_storage;
-        let k = self.k;
-        let m = self.m;
-
-        let parts = (0..db.sequence_count()).into_par_iter()
-            .map(|i|{
-                (i, get_minimizer_positions_with_return(db.get(i).seq, k, m))
-            })
-            .map(|(i, pos_list)|{
-                let mut tuples = Vec::<(Kmer, u32, u32)>::new();
-                for p in pos_list.iter(){
-                    let minmer = Kmer::from_ascii(&db.get(i).seq[*p..*p+m]).unwrap();
-                    tuples.push((minmer, i as u32, *p as u32));
-                }
-                tuples
-            }) // Now we have lists of (minimizer, seq_id, seq_pos) tuples
-            .fold(Vec::new, |mut x, y| {
-                x.extend(y); x
-            })
-            .collect::<Vec::<Vec::<(Kmer, u32, u32)>>>();
-
-        let mut position_list = parts.into_iter().fold(Vec::new(), |mut x, y| {
-            x.extend(y); x
-        });
-
-        position_list
-        
-    }
-
-    fn collect_distinct(position_list: &Vec<(Kmer, u32, u32)>) -> Vec<Kmer>{
-        let mut minimizer_list: Vec<Kmer> = vec![];
-        for (minmer, _, _) in position_list.iter(){
-            match minimizer_list.last(){
-                Some(last) => {
-                    if minmer != last{
-                        minimizer_list.push(*minmer);
-                    };
-                },
-                None => { minimizer_list.push(*minmer); }
-            }
-        }
-        minimizer_list
-    }
-
-    fn new(db: &'a SeqDB, k: usize, m: usize) -> Self{
-        if m > k {
-            panic!("m > k");
-        }
-        Self{seq_storage: &db, k, m}
-    }
-
-    fn build(self) -> MinimizerIndex<'a>{
-
-        log::info!("Extracting minimizers");
-        let mut position_list = self.build_position_list();
-
-        log::info!("Sorting tuples (minimizer, seq_id, seq_pos)");
-        position_list.par_sort_unstable();
-
-        log::info!("Collecting distinct minimizers");
-        let mut minimizer_list = Self::collect_distinct(&position_list);
-
-        log::info!("Removing duplicate minimizers");
-        minimizer_list.dedup();
-        minimizer_list.shrink_to_fit();
-
-        log::info!("Found {} distinct minimizers", minimizer_list.len());
-
-        log::info!("Building an MPHF for the minimizers");
-        let n_mmers = minimizer_list.len();
-        let mphf = boomphf::Mphf::<Kmer>::new_parallel(1.7, minimizer_list.as_slice(), None);
-        drop(minimizer_list);
-        
-        log::info!("Compressing position lists");
-        let (locations, bucket_starts) = Self::compress_sorted_position_list(position_list, &mphf, n_mmers);
-
-        log::info!("Stored {} location pairs", locations.len());
-        log::info!("Average bucket size: {:.2}", locations.len() as f64 / (bucket_starts.len() as f64 - 1.0)); // -1 because of end sentinel
-    
-        MinimizerIndex{seq_storage: self.seq_storage, mphf, locations, bucket_starts, k: self.k, m: self.m, n_mmers}
-    }
-
-}
 
 impl<'a> MinimizerIndex<'a>{
 
@@ -316,7 +149,7 @@ impl<'a> MinimizerIndex<'a>{
     }
 
     pub fn new(db: &'a SeqDB, k: usize, m: usize) -> Self{
-        MinimzerIndexBuilder::new(db, k, m).build()
+        build::build(db, k, m)
     }
 
 }
@@ -479,4 +312,157 @@ mod tests{
     }
 
     // TODO: test handling Ns
+}
+
+
+mod build{
+
+    use super::*;
+
+    // Returns the longest prefix of the slice that consists of elements that are 
+    // all the same according to the given equivalence relation predicate
+    fn get_prefix_run<T, F: Fn(&T, &T) -> bool>(slice: &[T], is_same: F) -> &[T]{
+        let first_different = slice.iter().position(|x| !is_same(x, &slice[0]));
+        match first_different{
+            Some(i) => &slice[0..i],
+            None => slice
+        }
+    }
+
+    fn get_bucket_sizes(L: &Vec::<(Kmer, u32, u32)>, h: &boomphf::Mphf<Kmer>, n_minimizers: usize) -> Vec<usize>{
+        let mut bucket_sizes: Vec::<usize> = vec![0; n_minimizers]; // Bucket sizes in left-to-right order of buckets
+
+        // Find out the bucket sizes
+        let mut L_tail = &L[..];
+        while !L_tail.is_empty(){
+            let prefix = get_prefix_run(L_tail, |(minmer, _, _), (minmer2, _, _)| minmer == minmer2);
+            bucket_sizes[h.hash(&prefix[0].0) as usize] = prefix.len();
+            L_tail = L_tail.split_at(prefix.len()).1;
+        }
+
+        bucket_sizes
+    }
+
+    fn get_bucket_starts(bucket_sizes: &Vec<usize>) -> Vec<usize>{
+        // Get the starting positions of buckets
+        let mut sum = 0_usize;
+        let mut bucket_starts = vec![0];
+        for b in bucket_sizes.iter(){
+            sum += b;
+            bucket_starts.push(sum)
+        }
+        bucket_starts.shrink_to_fit();
+        bucket_starts
+    }
+
+    // This mutates bucket_starts internally but restores it back to the original configuration before returning
+    fn store_location_pairs(L: &Vec::<(Kmer, u32, u32)>, h: &boomphf::Mphf<Kmer>, bucket_starts: &mut Vec<usize>, bucket_sizes: Vec<usize>,) -> Vec<(u32, u32)>{
+        // Store the locations
+        let batch_size = 1_000_000_000_usize;
+        let mut locations: Vec::<(u32, u32)> = vec![(0,0); *bucket_starts.last().unwrap()]; // Will have end sentinel
+        for chunk in L.chunks(batch_size){
+            let mut hash_values = Vec::<(u64, u32, u32)>::new();
+            chunk.par_iter().map(
+                |(minmer, seq_id, pos)| {
+                    (h.hash(minmer), *seq_id, *pos)
+                }
+            ).collect_into_vec(&mut hash_values);
+            
+            hash_values.iter().for_each(|(bucket_id, seq_id, pos)|{
+                    locations[bucket_starts[*bucket_id as usize]] = (*seq_id, *pos);    
+                    bucket_starts[*bucket_id as usize] += 1;
+                }
+            );
+        }
+
+        // Rewind back the bucket starts
+        for (i,s) in bucket_sizes.iter().enumerate(){
+            bucket_starts[i] -= s;
+        }
+
+        locations
+    }
+
+    fn compress_sorted_position_list(L: Vec::<(Kmer, u32, u32)>, h: &boomphf::Mphf<Kmer>, n_minimizers: usize) -> (Vec<(u32, u32)>, Vec<usize>){
+
+        let bucket_sizes = get_bucket_sizes(&L, h, n_minimizers);
+        let mut bucket_starts = get_bucket_starts(&bucket_sizes);
+        let locations = store_location_pairs(&L, h, &mut bucket_starts, bucket_sizes);
+
+        (locations, bucket_starts)
+    }
+
+    fn build_position_list<'a>(db: &'a SeqDB, k: usize, m: usize) -> Vec<(Kmer, u32, u32)>{
+
+        let parts = (0..db.sequence_count()).into_par_iter()
+            .map(|i|{
+                (i, get_minimizer_positions_with_return(db.get(i).seq, k, m))
+            })
+            .map(|(i, pos_list)|{
+                let mut tuples = Vec::<(Kmer, u32, u32)>::new();
+                for p in pos_list.iter(){
+                    let minmer = Kmer::from_ascii(&db.get(i).seq[*p..*p+m]).unwrap();
+                    tuples.push((minmer, i as u32, *p as u32));
+                }
+                tuples
+            }) // Now we have lists of (minimizer, seq_id, seq_pos) tuples
+            .fold(Vec::new, |mut x, y| {
+                x.extend(y); x
+            })
+            .collect::<Vec::<Vec::<(Kmer, u32, u32)>>>();
+
+        let mut position_list = parts.into_iter().fold(Vec::new(), |mut x, y| {
+            x.extend(y); x
+        });
+
+        position_list
+        
+    }
+
+    fn collect_distinct(position_list: &Vec<(Kmer, u32, u32)>) -> Vec<Kmer>{
+        let mut minimizer_list: Vec<Kmer> = vec![];
+        for (minmer, _, _) in position_list.iter(){
+            match minimizer_list.last(){
+                Some(last) => {
+                    if minmer != last{
+                        minimizer_list.push(*minmer);
+                    };
+                },
+                None => { minimizer_list.push(*minmer); }
+            }
+        }
+        minimizer_list
+    }
+
+    pub fn build(db: &SeqDB, k: usize, m: usize) -> MinimizerIndex{
+
+        log::info!("Extracting minimizers");
+        let mut position_list = build_position_list(db, k, m);
+
+        log::info!("Sorting tuples (minimizer, seq_id, seq_pos)");
+        position_list.par_sort_unstable();
+
+        log::info!("Collecting distinct minimizers");
+        let mut minimizer_list = collect_distinct(&position_list);
+
+        log::info!("Removing duplicate minimizers");
+        minimizer_list.dedup();
+        minimizer_list.shrink_to_fit();
+
+        log::info!("Found {} distinct minimizers", minimizer_list.len());
+
+        log::info!("Building an MPHF for the minimizers");
+        let n_mmers = minimizer_list.len();
+        let mphf = boomphf::Mphf::<Kmer>::new_parallel(1.7, minimizer_list.as_slice(), None);
+        drop(minimizer_list);
+        
+        log::info!("Compressing position lists");
+        let (locations, bucket_starts) = compress_sorted_position_list(position_list, &mphf, n_mmers);
+
+        log::info!("Stored {} location pairs", locations.len());
+        log::info!("Average bucket size: {:.2}", locations.len() as f64 / (bucket_starts.len() as f64 - 1.0)); // -1 because of end sentinel
+    
+        MinimizerIndex{seq_storage: db, mphf, locations, bucket_starts, k, m, n_mmers}
+    }
+
 }
