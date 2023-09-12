@@ -202,7 +202,7 @@ mod build{
         let mut L_tail = &L[..];
         while !L_tail.is_empty(){
             let prefix = get_prefix_run(L_tail, |(minmer, _, _), (minmer2, _, _)| minmer == minmer2);
-            let bucket_id = h.hash(&prefix[0].0);
+            let bucket_id = h.hash(&prefix[0].0); // Prefix is nonempty because L_tail was nonempty
             let start = bucket_starts[bucket_id as usize];
             for i in 0 .. prefix.len(){
                 locations[start + i] = (prefix[i].1, prefix[i].2);
