@@ -195,7 +195,7 @@ mod build{
         bucket_starts
     }
 
-    fn store_location_pairs(L: Vec::<(Kmer, u32, u32)>, h: &boomphf::Mphf<Kmer>, bucket_starts: &Vec<usize>, bucket_sizes: Vec<usize>,) -> Vec<(u32, u32)>{
+    fn store_location_pairs(L: Vec::<(Kmer, u32, u32)>, h: &boomphf::Mphf<Kmer>, bucket_starts: &Vec<usize>) -> Vec<(u32, u32)>{
         // Store the locations
         let mut locations: Vec::<(u32, u32)> = vec![(0,0); *bucket_starts.last().unwrap()]; // Will have an end sentinel
 
@@ -258,7 +258,7 @@ mod build{
         log::info!("Computing bucket starts");
         let bucket_starts = get_bucket_starts(&bucket_sizes);
         log::info!("Storing location pairs to buckets");
-        let locations = store_location_pairs(L, h, &bucket_starts, bucket_sizes);
+        let locations = store_location_pairs(L, h, &bucket_starts);
 
         (locations, bucket_starts)
     }
