@@ -169,6 +169,7 @@ mod build{
         }
     }
 
+    // L must be sorted
     fn get_bucket_sizes(L: &Vec::<(Kmer, u32, u32)>, h: &boomphf::Mphf<Kmer>, n_minimizers: usize) -> Vec<usize>{
         let mut bucket_sizes: Vec::<usize> = vec![0; n_minimizers]; // Bucket sizes in left-to-right order of buckets
 
@@ -195,8 +196,8 @@ mod build{
         bucket_starts
     }
 
+    // L must be sorted
     fn store_location_pairs(L: Vec::<(Kmer, u32, u32)>, h: &boomphf::Mphf<Kmer>, bucket_starts: &Vec<usize>) -> Vec<(u32, u32)>{
-        // Store the locations
         let mut locations: Vec::<(u32, u32)> = vec![(0,0); *bucket_starts.last().unwrap()]; // Will have an end sentinel
 
         let mut L_tail = &L[..];
@@ -212,12 +213,16 @@ mod build{
         locations
     }
 
-    fn build_position_list<'a>(db: &'a SeqDB, k: usize, m: usize) -> Vec<(Kmer, u32, u32)>{
+    // Returns a list of tuples (minmer, seq_id, pos), where 'pos' is the starting position
+    // of 'minmer' in sequence with id 'seq_id'.
+    fn build_position_list(db: & SeqDB, k: usize, m: usize) -> Vec<(Kmer, u32, u32)>{
 
         let parts = (0..db.sequence_count()).into_par_iter()
-            .map(|i|{
+            // Find out minimizer positions in this sequence
+            .map(|i|{ 
                 (i, get_minimizer_positions_with_return(db.get(i).seq, k, m))
             })
+            // Expand the positions into tuples (minmer, seq_id, seq_pos)
             .map(|(i, pos_list)|{
                 let mut tuples = Vec::<(Kmer, u32, u32)>::new();
                 for p in pos_list.iter(){
@@ -225,18 +230,21 @@ mod build{
                     tuples.push((minmer, i as u32, *p as u32));
                 }
                 tuples
-            }) // Now we have lists of (minimizer, seq_id, seq_pos) tuples
+            })
+            // Concatenate lists together into just a few lists with a parallel fold
             .fold(Vec::new, |mut x, y| {
                 x.extend(y); x
             })
+            // Collect the lists from the fold
             .collect::<Vec::<Vec::<(Kmer, u32, u32)>>>();
 
+        // Concatenate together the lists from the fold
         parts.into_iter().fold(Vec::new(), |mut x, y| {
             x.extend(y); x
         })   
     }
 
-    fn collect_distinct(position_list: &Vec<(Kmer, u32, u32)>) -> Vec<Kmer>{
+    fn collect_distinct_minmers_from_sorted_list(position_list: &Vec<(Kmer, u32, u32)>) -> Vec<Kmer>{
         let mut minimizer_list: Vec<Kmer> = vec![];
         for (minmer, _, _) in position_list.iter(){
             match minimizer_list.last(){
@@ -273,7 +281,7 @@ mod build{
         position_list.par_sort_unstable();
 
         log::info!("Collecting distinct minimizers");
-        let mut minimizer_list = collect_distinct(&position_list);
+        let mut minimizer_list = collect_distinct_minmers_from_sorted_list(&position_list);
 
         log::info!("Removing duplicate minimizers");
         minimizer_list.dedup();
