@@ -138,8 +138,6 @@ impl<'a> MinimizerIndex<'a>{
     }
 
     fn compress_sorted_position_list(L: Vec::<(Kmer, u32, u32)>, h: &boomphf::Mphf<Kmer>, n_minimizers: usize) -> (Vec<(u32, u32)>, Vec<usize>){
-        
-        let batch_size = 1_000_000_000_usize;
 
         let mut bucket_sizes: Vec::<usize> = vec![0; n_minimizers]; // Bucket sizes in left-to-right order of buckets
 
@@ -161,11 +159,21 @@ impl<'a> MinimizerIndex<'a>{
         bucket_starts.shrink_to_fit();
 
         // Store the locations
+        let batch_size = 1_000_000_000_usize;
         let mut locations: Vec::<(u32, u32)> = vec![(0,0); *bucket_starts.last().unwrap()]; // Will have end sentinel
-        for (minmer, seq_id, pos) in L{
-            let bucket = h.hash(&minmer) as usize;
-            locations[bucket_starts[bucket]] = (seq_id, pos);
-            bucket_starts[bucket] += 1;
+        for chunk in L.chunks(batch_size){
+            let mut hash_values = Vec::<(u64, u32, u32)>::new();
+            chunk.par_iter().map(
+                |(minmer, seq_id, pos)| {
+                    (h.hash(minmer), *seq_id, *pos)
+                }
+            ).collect_into_vec(&mut hash_values);
+            
+            hash_values.iter().for_each(|(bucket_id, seq_id, pos)|{
+                    locations[bucket_starts[*bucket_id as usize]] = (*seq_id, *pos);    
+                    bucket_starts[*bucket_id as usize] += 1;
+                }
+            );
         }
 
         // Rewind back the bucket starts
