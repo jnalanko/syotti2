@@ -191,14 +191,14 @@ impl<'a> MinimzerIndexBuilder<'a>{
         (locations, bucket_starts)
     }
 
-    pub fn new(db: &'a SeqDB, k: usize, m: usize) -> Self{
+    fn new(db: &'a SeqDB, k: usize, m: usize) -> Self{
         if m > k {
             panic!("m > k");
         }
         Self{seq_storage: &db, k, m}
     }
 
-    pub fn build(self) -> MinimizerIndex<'a>{
+    fn build(self) -> MinimizerIndex<'a>{
 
         // Take into local variables to avoid writing self all the time
         let db = self.seq_storage;
