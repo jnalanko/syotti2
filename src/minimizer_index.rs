@@ -356,23 +356,13 @@ mod build{
     }
 
     // This mutates bucket_starts internally but restores it back to the original configuration before returning
-    fn store_location_pairs(L: &Vec::<(Kmer, u32, u32)>, h: &boomphf::Mphf<Kmer>, bucket_starts: &mut Vec<usize>, bucket_sizes: Vec<usize>,) -> Vec<(u32, u32)>{
+    fn store_location_pairs(L: Vec::<(Kmer, u32, u32)>, h: &boomphf::Mphf<Kmer>, bucket_starts: &mut Vec<usize>, bucket_sizes: Vec<usize>,) -> Vec<(u32, u32)>{
         // Store the locations
-        let batch_size = 1_000_000_000_usize;
-        let mut locations: Vec::<(u32, u32)> = vec![(0,0); *bucket_starts.last().unwrap()]; // Will have end sentinel
-        for chunk in L.chunks(batch_size){
-            let mut hash_values = Vec::<(u64, u32, u32)>::new();
-            chunk.par_iter().map(
-                |(minmer, seq_id, pos)| {
-                    (h.hash(minmer), *seq_id, *pos)
-                }
-            ).collect_into_vec(&mut hash_values);
-            
-            hash_values.iter().for_each(|(bucket_id, seq_id, pos)|{
-                    locations[bucket_starts[*bucket_id as usize]] = (*seq_id, *pos);    
-                    bucket_starts[*bucket_id as usize] += 1;
-                }
-            );
+        let mut locations: Vec::<(u32, u32)> = vec![(0,0); *bucket_starts.last().unwrap()]; // Will have an end sentinel
+        for (minmer, seq_id, pos) in L{
+            let bucket_id = h.hash(&minmer);
+            locations[bucket_starts[bucket_id as usize]] = (seq_id, pos);
+            bucket_starts[bucket_id as usize] += 1;
         }
 
         // Rewind back the bucket starts
@@ -432,7 +422,7 @@ mod build{
         log::info!("Computing bucket starts");
         let mut bucket_starts = get_bucket_starts(&bucket_sizes);
         log::info!("Storing location pairs to buckets");
-        let locations = store_location_pairs(&L, h, &mut bucket_starts, bucket_sizes);
+        let locations = store_location_pairs(L, h, &mut bucket_starts, bucket_sizes);
 
         (locations, bucket_starts)
     }
