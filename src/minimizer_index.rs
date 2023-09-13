@@ -110,11 +110,10 @@ impl Kmer{
     }
 }
 
-
 impl<'a> MinimizerIndex<'a>{
 
     // Returns all occurrences of the query k-mer
-    pub fn lookup(&self, kmer: &[u8]) -> Vec<(usize, usize)>{
+    pub fn lookup_kmer(&self, kmer: &[u8]) -> Vec<(usize, usize)>{
         assert!(kmer.len() == self.k);
         let min_pos = get_minimizer_position(kmer, self.m);
         let minimizer = &kmer[min_pos .. min_pos + self.m];
@@ -146,6 +145,23 @@ impl<'a> MinimizerIndex<'a>{
         }
 
         ans
+    }
+
+    // Searches for all k-mer of the query and 
+    // returns pairs (i,j) such that seq might be found in sequence i starting from position j
+    pub fn get_exact_alignment_candidates(&self, query: &[u8]) -> Vec<(usize,usize)>{
+        let mut align_starts = std::collections::HashSet::<(usize,usize)>::new(); // Pairs (seq_id, seq_pos)
+        for (query_pos, kmer) in query.windows(self.k).enumerate(){
+            for (target_id, target_pos) in self.lookup_kmer(kmer){
+                
+                let align_start = target_pos as isize - query_pos as isize;
+                if align_start >= 0 && (align_start + query.len() as isize) <= self.seq_storage.get(target_id).seq.len() as isize{
+                    // Is within bounds
+                    align_starts.insert((target_id, align_start as usize));
+                }
+            }
+        }
+        return align_starts.iter().map(|&(i,j)| (i,j)).collect();
     }
 
     pub fn new(db: &'a SeqDB, k: usize, m: usize) -> Self{
@@ -363,7 +379,7 @@ mod tests{
         for seq in seqs.iter(){
             for i in 0 .. number_of_kmers(seq.len(), k){
                 let kmer = &seq[i..i+k];
-                let occs = index.lookup(kmer);
+                let occs = index.lookup_kmer(kmer);
                 eprintln!("{} {:?} {:?}", to_ascii(kmer), &occs, &true_kmer_occurrences[kmer]);
                 assert_eq!(occs, true_kmer_occurrences[kmer]);
             }
@@ -386,7 +402,7 @@ mod tests{
         // Look up a random k-mer (should not be found)
         let index = MinimizerIndex::new(&db, 31, 10);
         let random_kmer = "ATCTTATCTGGGGCTATTGCTAGGGCTTACA".as_bytes();
-        assert_eq!(index.lookup(random_kmer).len(), 0);
+        assert_eq!(index.lookup_kmer(random_kmer).len(), 0);
     }
 
     #[test] 
@@ -456,7 +472,7 @@ mod tests{
 
         // Verify
         for query in queries {
-            let occs = index.lookup(&query);
+            let occs = index.lookup_kmer(&query);
             eprintln!("{} {:?} {:?}", to_ascii(&query), &occs, &true_occurrences[&query]);
             assert_eq!(occs, true_occurrences[&query]);
         }

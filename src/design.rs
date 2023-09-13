@@ -17,18 +17,7 @@ fn hamming_distance_not_matching_N(a: &[u8], b: &[u8]) -> usize{
 
 // Returns the number of new bases covered
 fn mark_all_that_are_covered_by(bait: &[u8], cover_marks: &mut Vec<Vec<bool>>, index: &MinimizerIndex, db: &SeqDB, hamming_distance: usize, k: usize) -> usize{
-    let mut align_starts = HashSet::<(usize,usize)>::new(); // Pairs (seq_id, seq_pos)
-    for (bait_pos, kmer) in bait.windows(k).enumerate(){
-        for (seq_id, seq_pos) in index.lookup(kmer){
-            
-            let align_start = seq_pos as isize - bait_pos as isize;
-            if align_start >= 0 && (align_start + bait.len() as isize) <= db.get(seq_id).seq.len() as isize{
-                // Is within bounds
-                align_starts.insert((seq_id, align_start as usize));
-            }
-        }
-    }
-
+    let align_starts = index.get_exact_alignment_candidates(bait);
     let mut new_covered_bases = 0_usize;
     for (seq_id, seq_pos) in align_starts{
         if hamming_distance_not_matching_N(bait, &db.get(seq_id).seq[seq_pos..seq_pos+bait.len()]) <= hamming_distance{
