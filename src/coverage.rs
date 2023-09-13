@@ -55,6 +55,8 @@ pub fn compute_coverage(targets_db: &SeqDB, bait_db: &SeqDB, d: usize, g: usize,
 }
 
 pub fn into_moving_average(v: Vec<u32>, window_size: usize) -> Vec<f32>{
+    assert!(window_size > 0);
+    
     if v.len() < window_size{
         return vec![];
     }
@@ -76,7 +78,7 @@ pub fn into_moving_average(v: Vec<u32>, window_size: usize) -> Vec<f32>{
 pub fn into_resolution(coverages: Vec<Vec<u32>>, points: usize) -> Vec<Vec<f32>>{
     let mut new_covs = Vec::<Vec::<f32>>::new();
     for cov in coverages.into_iter(){
-        let window_len = cov.len() / points;
+        let window_len = std::cmp::max(cov.len() / points, 1);
         let sampling_step = cov.len() as f64 / points as f64;
         let avgs = into_moving_average(cov, window_len);
 
