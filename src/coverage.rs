@@ -20,7 +20,8 @@ pub fn compute_coverage(targets_db: &SeqDB, bait_db: &SeqDB, out: &mut impl Writ
             let target = &targets_db.get(target_id).seq[target_start .. target_start + bait.seq.len()];
             if syotti2::hamming_distance_not_matching_N(bait.seq, target) <= d{
                 for i in 0..bait.seq.len(){
-                    coverages[target_id][target_start + i] += 1;
+                    // Add 1 to the coverage using saturating add so we don't overflow
+                    coverages[target_id][target_start + i] = coverages[target_id][target_start + i].saturating_add(1);
                 }
             }
         }
