@@ -5,6 +5,7 @@ mod coverage;
 use std::path::PathBuf;
 
 use clap::ArgAction;
+use coverage::compute_coverage;
 use jseqio::reader::*;
 use jseqio::writer::*;
 use jseqio::record::*;
@@ -161,7 +162,7 @@ fn main() {
             let d: usize = *sub_matches.get_one("hamming-distance").unwrap();
             let g: usize = *sub_matches.get_one("seed-len").unwrap();
             let m: usize = *sub_matches.get_one("minimizer-len").unwrap();
-            
+            compute_coverage(targetfile, baitfile, outfile, d, g, m);
         }
         _ => {
             log::error!("Unknown subcommand");

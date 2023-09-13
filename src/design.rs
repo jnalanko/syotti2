@@ -4,23 +4,13 @@ use jseqio::{seq_db::SeqDB, writer::DynamicFastXWriter};
 use log::info;
 use crate::minimizer_index::MinimizerIndex;
 
-fn hamming_distance_not_matching_N(a: &[u8], b: &[u8]) -> usize{
-    assert_eq!(a.len(), b.len());
-    let mut dist = 0;
-    for (x,y) in a.iter().zip(b.iter()){
-        if x != y || (x == &b'N' && y == &b'N'){
-            dist += 1;
-        }
-    }
-    dist
-}
 
 // Returns the number of new bases covered
 fn mark_all_that_are_covered_by(bait: &[u8], cover_marks: &mut Vec<Vec<bool>>, index: &MinimizerIndex, db: &SeqDB, hamming_distance: usize, k: usize) -> usize{
     let align_starts = index.get_exact_alignment_candidates(bait);
     let mut new_covered_bases = 0_usize;
     for (seq_id, seq_pos) in align_starts{
-        if hamming_distance_not_matching_N(bait, &db.get(seq_id).seq[seq_pos..seq_pos+bait.len()]) <= hamming_distance{
+        if syotti2::hamming_distance_not_matching_N(bait, &db.get(seq_id).seq[seq_pos..seq_pos+bait.len()]) <= hamming_distance{
             for i in seq_pos..seq_pos+bait.len(){
                 new_covered_bases += !cover_marks[seq_id][i] as usize;
                 cover_marks[seq_id][i] = true; // This is within bounds because it was checked above
@@ -90,7 +80,7 @@ mod tests{
     fn test_hamming_distance_not_matching_N(){
         let s = b"AACCGGTTNN";
         let t = b"ATCTGTTANA";
-        assert_eq!(hamming_distance_not_matching_N(s,t), 6);
+        assert_eq!(syotti2::hamming_distance_not_matching_N(s,t), 6);
     }
 
     #[test]
