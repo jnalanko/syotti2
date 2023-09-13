@@ -145,11 +145,11 @@ fn main() {
         
             let reader = DynamicFastXReader::from_file(infile).unwrap();
             let mut writer = std::io::BufWriter::new(std::fs::File::create(outfile).unwrap()); // Let's open this right away to crash early if there's a problem
-        
+
             info!("Reading sequences from {}", infile.display());
             let seq_db = Box::new(reader.into_db().unwrap());
         
-            info!("Indexing the sequences");
+            info!("Indexing the sequences"); // TODO: move to inside design
             let index = minimizer_index::MinimizerIndex::new(&seq_db, g, m);
         
             info!("Designing baits");
@@ -162,7 +162,12 @@ fn main() {
             let d: usize = *sub_matches.get_one("hamming-distance").unwrap();
             let g: usize = *sub_matches.get_one("seed-len").unwrap();
             let m: usize = *sub_matches.get_one("minimizer-len").unwrap();
-            compute_coverage(targetfile, baitfile, outfile, d, g, m);
+
+            let mut out = std::io::BufWriter::new(std::fs::File::create(outfile).unwrap());
+            let bait_db = DynamicFastXReader::from_file(&baitfile).unwrap().into_db().unwrap(); // TODO: print info
+            let targets_db = DynamicFastXReader::from_file(&targetfile).unwrap().into_db().unwrap();
+        
+            compute_coverage(&targets_db, &bait_db, &mut out, d, g, m);
         }
         _ => {
             log::error!("Unknown subcommand");
