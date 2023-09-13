@@ -129,15 +129,15 @@ fn main() {
 
     let cli_matches = cli.get_matches();
     match cli_matches.subcommand() {
-        Some(("design", _)) => {
-            let infile: &PathBuf = cli_matches.get_one("targets").unwrap();
-            let outfile: &PathBuf = cli_matches.get_one("output").unwrap();
-            let L: usize = *cli_matches.get_one("bait-length").unwrap();
-            let d: usize = *cli_matches.get_one("hamming-distance").unwrap();
-            let g: usize = *cli_matches.get_one("seed-len").unwrap();
-            let m: usize = *cli_matches.get_one("minimizer-len").unwrap();
-            let cutoff: f64 = *cli_matches.get_one("cutoff").unwrap();
-            let randomize: bool = cli_matches.get_flag("randomize");
+        Some(("design", sub_matches)) => {
+            let infile: &PathBuf = sub_matches.get_one("targets").unwrap();
+            let outfile: &PathBuf = sub_matches.get_one("output").unwrap();
+            let L: usize = *sub_matches.get_one("bait-length").unwrap();
+            let d: usize = *sub_matches.get_one("hamming-distance").unwrap();
+            let g: usize = *sub_matches.get_one("seed-len").unwrap();
+            let m: usize = *sub_matches.get_one("minimizer-len").unwrap();
+            let cutoff: f64 = *sub_matches.get_one("cutoff").unwrap();
+            let randomize: bool = sub_matches.get_flag("randomize");
             if randomize { // TODO
                 std::unimplemented!("Randomization not implemented yet");
             }
@@ -154,13 +154,13 @@ fn main() {
             info!("Designing baits");
             design::run_algorithm(&seq_db, &index, L, d, g, cutoff, &mut writer);
         }
-        Some(("coverage", _)) => {
-            let targetfile: &PathBuf = cli_matches.get_one("targets").unwrap();
-            let outfile: &PathBuf = cli_matches.get_one("output").unwrap();
-            let baitfile: &PathBuf = cli_matches.get_one("baits").unwrap();
-            let d: usize = *cli_matches.get_one("hamming-distance").unwrap();
-            let g: usize = *cli_matches.get_one("seed-len").unwrap();
-            let m: usize = *cli_matches.get_one("minimizer-len").unwrap();
+        Some(("coverage", sub_matches)) => {
+            let targetfile: &PathBuf = sub_matches.get_one("targets").unwrap();
+            let outfile: &PathBuf = sub_matches.get_one("output").unwrap();
+            let baitfile: &PathBuf = sub_matches.get_one("baits").unwrap();
+            let d: usize = *sub_matches.get_one("hamming-distance").unwrap();
+            let g: usize = *sub_matches.get_one("seed-len").unwrap();
+            let m: usize = *sub_matches.get_one("minimizer-len").unwrap();
             
         }
         _ => {
