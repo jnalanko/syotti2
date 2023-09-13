@@ -54,6 +54,28 @@ pub fn compute_coverage(targets_db: &SeqDB, bait_db: &SeqDB, d: usize, g: usize,
 
 }
 
+pub fn into_moving_average(v: Vec<u32>, window_size: usize) -> Vec<f32>{
+    if v.len() < window_size{
+        return vec![];
+    }
+
+    // Compute the average of the first window
+    let mut sum = v[0..window_size].iter().fold(0_usize, |s,x| s + *x as usize);
+    let mut avgs: Vec<f32> = vec![(sum as f32) / (window_size as f32)];
+
+    // Compute averages of the rest
+    for i in window_size..v.len(){
+        sum = sum - v[i-window_size] as usize + v[i] as usize;
+        avgs.push((sum as f32) / (window_size as f32));
+    }
+
+    avgs
+}
+
+pub fn into_moving_averages(coverages: Vec<Vec<u32>>, window_size: usize) -> Vec<Vec<f32>>{
+    coverages.into_iter().map(|v| into_moving_average(v, window_size)).collect()
+}
+
 #[cfg(test)]
 mod tests{
     use super::compute_coverage;
@@ -95,6 +117,24 @@ mod tests{
         let coverages = compute_coverage(&target_db, &bait_db,  1, 5, 3);
 
         assert_eq!(answer, coverages);
+    }
+
+    #[test]
+    fn test_moving_avg(){
+        let data: Vec<Vec<u32>> = vec![vec![1,2,3,4,5], vec![1,2], vec![]];
+
+        let window_len = 3;
+        let answer: Vec<Vec<f32>> = vec![vec![2.0, 3.0, 4.0], vec![], vec![]];
+
+        let avgs = into_moving_averages(data, window_len);
+
+        dbg!(&answer, &avgs);
+        for i in 0..3{
+            assert_eq!(answer[i].len(), avgs[i].len());
+            for j in 0..answer[i].len(){
+                assert!((answer[i][j] - avgs[i][j]).abs() < 1e-6);
+            }
+        }
     }
 }
 
