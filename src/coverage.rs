@@ -1,8 +1,22 @@
 use std::path::Path;
-use jseqio::reader::*;
+use jseqio::{reader::*, reverse_complement};
 use jseqio::seq_db::SeqDB;
 use std::io::Write;
 use crate::minimizer_index::MinimizerIndex;
+
+fn update_coverage(coverages: &mut Vec<Vec<u32>>, bait: &[u8], index: &MinimizerIndex, targets_db: &SeqDB, hamming_distance: usize, k: usize){
+    let candidates = index.get_exact_alignment_candidates(bait);
+
+    for (target_id, target_start) in candidates{
+        let target = &targets_db.get(target_id).seq[target_start .. target_start + bait.len()];
+        if syotti2::hamming_distance_not_matching_N(bait, target) <= hamming_distance{
+            for i in 0..bait.len(){
+                // Add 1 to the coverage using saturating add so we don't overflow
+                coverages[target_id][target_start + i] = coverages[target_id][target_start + i].saturating_add(1);
+            }
+        }
+    }
+}
 
 pub fn compute_coverage(targets_db: &SeqDB, bait_db: &SeqDB, out: &mut impl Write, d: usize, g: usize, m: usize) {
     
@@ -16,15 +30,8 @@ pub fn compute_coverage(targets_db: &SeqDB, bait_db: &SeqDB, out: &mut impl Writ
     }
 
     for bait in bait_db.iter() {
-        for (target_id, target_start) in index.get_exact_alignment_candidates(bait.seq){
-            let target = &targets_db.get(target_id).seq[target_start .. target_start + bait.seq.len()];
-            if syotti2::hamming_distance_not_matching_N(bait.seq, target) <= d{
-                for i in 0..bait.seq.len(){
-                    // Add 1 to the coverage using saturating add so we don't overflow
-                    coverages[target_id][target_start + i] = coverages[target_id][target_start + i].saturating_add(1);
-                }
-            }
-        }
+        update_coverage(&mut coverages, bait.seq, &index, targets_db, d, g);
+        update_coverage(&mut coverages, reverse_complement(bait.seq).as_slice(), &index, targets_db, d, g);
     }
 
     for v in coverages.iter() {
@@ -61,7 +68,7 @@ mod tests{
             b"TGCTATCTAT".to_vec(),
             b"TGATCGTAGC".to_vec(),
             b"AAGCTACCAC".to_vec(),
-            b"GAGCTACCAC".to_vec() // Repeat the last bait but starting with a G
+            b"GTGGTAGCTT".to_vec() // Reverse complement of the previous bait
         ]; // These tile the first sequence with at most 1 mismatch per bait, except for the last 4 bases
 
         let mut bait_db = SeqDB::new();
