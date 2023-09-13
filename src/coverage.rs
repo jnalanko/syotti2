@@ -18,7 +18,7 @@ fn update_coverage(coverages: &mut Vec<Vec<u32>>, bait: &[u8], index: &Minimizer
     }
 }
 
-fn write_as_csv(lines: Vec<Vec<u32>>, out: &mut impl Write){
+pub fn write_as_csv(lines: Vec<Vec<u32>>, out: &mut impl Write){
     for v in lines.iter() {
         // Write v as a line of comma-separated values
         for (i, x) in v.iter().enumerate(){
@@ -34,7 +34,7 @@ fn write_as_csv(lines: Vec<Vec<u32>>, out: &mut impl Write){
 
 // Note: searches both forward and reverse complement. This means that if a bait overlaps with its own
 // reverse complement, it could contribute 2 to the coverage depth at the overlapping positions.
-pub fn compute_coverage(targets_db: &SeqDB, bait_db: &SeqDB, out: &mut impl Write, d: usize, g: usize, m: usize) {
+pub fn compute_coverage(targets_db: &SeqDB, bait_db: &SeqDB, d: usize, g: usize, m: usize) -> Vec<Vec<u32>>{
     
     let index = MinimizerIndex::new(&targets_db, g, m);
 
@@ -50,7 +50,7 @@ pub fn compute_coverage(targets_db: &SeqDB, bait_db: &SeqDB, out: &mut impl Writ
         update_coverage(&mut coverages, reverse_complement(bait.seq).as_slice(), &index, targets_db, d, g);
     }
 
-    write_as_csv(coverages, out);
+    coverages
 
 }
 
@@ -80,28 +80,21 @@ mod tests{
         let mut bait_db = SeqDB::new();
         for seq in baits.iter() {bait_db.push_seq(seq);};
 
-        let mut t0_answer = vec![0; targets[0].len()];
+        let mut t0_answer: Vec<u32> = vec![0; targets[0].len()];
         for i in 0..40 {t0_answer[i] += 1;}
         for i in 30..40 {t0_answer[i] += 1;}
 
-        let mut t1_answer = vec![0; targets[1].len()];
+        let mut t1_answer: Vec<u32> = vec![0; targets[1].len()];
         for i in 1..21 {t1_answer[i] += 1;}
 
-        let mut t2_answer = vec![0; targets[2].len()];
+        let mut t2_answer: Vec<u32> = vec![0; targets[2].len()];
         for i in 9..19 {t2_answer[i] += 1;}
 
-        let t0_csv = t0_answer.iter().map(|x| x.to_string()).collect::<Vec<String>>().join(",");
-        let t1_csv = t1_answer.iter().map(|x| x.to_string()).collect::<Vec<String>>().join(",");
-        let t2_csv = t2_answer.iter().map(|x| x.to_string()).collect::<Vec<String>>().join(",");
-        let answer = format!("{}\n{}\n{}\n", t0_csv, t1_csv, t2_csv);
+        let answer = vec![t0_answer, t1_answer, t2_answer];
 
-        let mut csv_out = Vec::<u8>::new();
-        compute_coverage(&target_db, &bait_db, &mut csv_out, 1, 5, 3);
+        let coverages = compute_coverage(&target_db, &bait_db,  1, 5, 3);
 
-        eprintln!("csv_out:\n{}", String::from_utf8(csv_out.clone()).unwrap());
-        eprintln!("answer:\n{}", answer);
-
-        assert_eq!(csv_out, answer.as_bytes());
+        assert_eq!(answer, coverages);
     }
 }
 

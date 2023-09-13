@@ -167,7 +167,8 @@ fn main() {
             let bait_db = DynamicFastXReader::from_file(&baitfile).unwrap().into_db().unwrap(); // TODO: print info
             let targets_db = DynamicFastXReader::from_file(&targetfile).unwrap().into_db().unwrap();
         
-            compute_coverage(&targets_db, &bait_db, &mut out, d, g, m);
+            let coverages = compute_coverage(&targets_db, &bait_db, d, g, m);
+            coverage::write_as_csv(coverages, &mut out);
         }
         _ => {
             log::error!("Unknown subcommand");
