@@ -26,6 +26,7 @@ fn main() {
     let cli = Command::new("syotti2")
         .about("Bait design for targeted sequencing")
         .author("Jarno N. Alanko <alanko.jarno@gmail.com>")
+        .subcommand_required(true)
         .subcommand(Command::new("design")
             .arg(Arg::new("targets")
                 .help("Input FASTA or FASTQ file, possibly gzipped")
