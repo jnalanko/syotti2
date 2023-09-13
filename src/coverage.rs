@@ -18,6 +18,8 @@ fn update_coverage(coverages: &mut Vec<Vec<u32>>, bait: &[u8], index: &Minimizer
     }
 }
 
+// Note: searches both forward and reverse complement. This means that if a bait overlaps with its own
+// reverse complement, it could contribute 2 to the coverage depth at the overlapping positions.
 pub fn compute_coverage(targets_db: &SeqDB, bait_db: &SeqDB, out: &mut impl Write, d: usize, g: usize, m: usize) {
     
     let index = MinimizerIndex::new(&targets_db, g, m);
