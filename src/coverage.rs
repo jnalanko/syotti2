@@ -18,6 +18,20 @@ fn update_coverage(coverages: &mut Vec<Vec<u32>>, bait: &[u8], index: &Minimizer
     }
 }
 
+fn write_as_csv(lines: Vec<Vec<u32>>, out: &mut impl Write){
+    for v in lines.iter() {
+        // Write v as a line of comma-separated values
+        for (i, x) in v.iter().enumerate(){
+            if i > 0 {
+                write!(out, ",").unwrap();
+                
+            }
+            write!(out, "{}", x).unwrap();
+        }
+        write!(out, "\n").unwrap();
+    }
+}
+
 // Note: searches both forward and reverse complement. This means that if a bait overlaps with its own
 // reverse complement, it could contribute 2 to the coverage depth at the overlapping positions.
 pub fn compute_coverage(targets_db: &SeqDB, bait_db: &SeqDB, out: &mut impl Write, d: usize, g: usize, m: usize) {
@@ -36,17 +50,7 @@ pub fn compute_coverage(targets_db: &SeqDB, bait_db: &SeqDB, out: &mut impl Writ
         update_coverage(&mut coverages, reverse_complement(bait.seq).as_slice(), &index, targets_db, d, g);
     }
 
-    for v in coverages.iter() {
-        // Write v as a line of comma-separated values
-        for (i, x) in v.iter().enumerate(){
-            if i > 0 {
-                write!(out, ",").unwrap();
-                
-            }
-            write!(out, "{}", x).unwrap();
-        }
-        write!(out, "\n").unwrap();
-    }
+    write_as_csv(coverages, out);
 
 }
 
