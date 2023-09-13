@@ -72,8 +72,22 @@ pub fn into_moving_average(v: Vec<u32>, window_size: usize) -> Vec<f32>{
     avgs
 }
 
-pub fn into_moving_averages(coverages: Vec<Vec<u32>>, window_size: usize) -> Vec<Vec<f32>>{
-    coverages.into_iter().map(|v| into_moving_average(v, window_size)).collect()
+// Samples the moving average of the coverage vectors to get exactly 'points' points
+pub fn into_resolution(coverages: Vec<Vec<u32>>, points: usize) -> Vec<Vec<f32>>{
+    let mut new_covs = Vec::<Vec::<f32>>::new();
+    for cov in coverages.into_iter(){
+        let window_len = cov.len() / points;
+        let sampling_step = cov.len() as f64 / points as f64;
+        let avgs = into_moving_average(cov, window_len);
+
+        let mut sampled_points: Vec<f32> = vec![0.0; points];
+        
+        for i in 0..points{
+            sampled_points[i] = avgs[i*sampling_step as usize];
+        }
+        new_covs.push(sampled_points);
+    }
+    new_covs
 }
 
 #[cfg(test)]
@@ -126,15 +140,9 @@ mod tests{
         let window_len = 3;
         let answer: Vec<Vec<f32>> = vec![vec![2.0, 3.0, 4.0], vec![], vec![]];
 
-        let avgs = into_moving_averages(data, window_len);
-
-        dbg!(&answer, &avgs);
-        for i in 0..3{
-            assert_eq!(answer[i].len(), avgs[i].len());
-            for j in 0..answer[i].len(){
-                assert!((answer[i][j] - avgs[i][j]).abs() < 1e-6);
-            }
-        }
+        assert_eq!(into_moving_average(data[0].clone(), window_len), answer[0]);
+        assert_eq!(into_moving_average(data[1].clone(), window_len), answer[1]);
+        assert_eq!(into_moving_average(data[2].clone(), window_len), answer[2]);
     }
 }
 

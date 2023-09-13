@@ -98,11 +98,10 @@ fn main() {
             .required(true)
             .value_parser(clap::value_parser!(PathBuf))
         )
-        .arg(Arg::new("smooth")
-            .help("Smooth coverage by computing the moving average with the given window length. Window length 1 means no smoothing")
-            .short('s')
-            .long("smooth")
-            .default_value("1")
+        .arg(Arg::new("resolution")
+            .help("Computes a moving average over the coverage vectors and samples those at evenly spaced intervals to get this many data points per sequence.")
+            .short('r')
+            .long("resolution")
             .value_parser(clap::value_parser!(usize))
         )        
         .arg(Arg::new("hamming-distance")
@@ -170,16 +169,16 @@ fn main() {
             let d: usize = *sub_matches.get_one("hamming-distance").unwrap();
             let g: usize = *sub_matches.get_one("seed-len").unwrap();
             let m: usize = *sub_matches.get_one("minimizer-len").unwrap();
-            let window_size: usize = *sub_matches.get_one("smooth").unwrap();
+            let resolution: Option<usize> = *sub_matches.get_one("resolution").unwrap();
 
             let mut out = std::io::BufWriter::new(std::fs::File::create(outfile).unwrap());
-            let bait_db = DynamicFastXReader::from_file(&baitfile).unwrap().into_db().unwrap(); // TODO: print info
+            let bait_db = DynamicFastXReader::from_file(&baitfile).unwrap().into_db().unwrap(); // TODO: print info log
             let targets_db = DynamicFastXReader::from_file(&targetfile).unwrap().into_db().unwrap();
         
             let coverages = compute_coverage(&targets_db, &bait_db, d, g, m);
-            if window_size > 1{
-                let moving_averages = coverage::into_moving_averages(coverages, window_size);
-                coverage::write_as_csv(moving_averages, &mut out);
+            if let Some(reso) = resolution {
+                let averages = coverage::into_resolution(coverages, reso);
+                coverage::write_as_csv(averages, &mut out);
             } else{
                 coverage::write_as_csv(coverages, &mut out);
             }
