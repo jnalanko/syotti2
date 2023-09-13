@@ -27,6 +27,14 @@ fn main() {
         .about("Bait design for targeted sequencing")
         .author("Jarno N. Alanko <alanko.jarno@gmail.com>")
         .subcommand_required(true)
+        .arg(Arg::new("threads")
+            .help("Number of threads to use")
+            .long("threads")
+            .short('j')
+            .default_value("8")
+            .global(true)
+            .value_parser(clap::value_parser!(usize))
+        )
         .subcommand(Command::new("design")
             .arg(Arg::new("targets")
                 .help("Input FASTA or FASTQ file, possibly gzipped")
@@ -136,7 +144,12 @@ fn main() {
         )
     );
 
+    
     let cli_matches = cli.get_matches();
+
+    let n_threads = *cli_matches.get_one::<usize>("threads").unwrap();
+    rayon::ThreadPoolBuilder::new().num_threads(n_threads).build_global().unwrap();
+
     match cli_matches.subcommand() {
         Some(("design", sub_matches)) => {
             let infile: &PathBuf = sub_matches.get_one("targets").unwrap();
