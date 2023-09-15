@@ -202,19 +202,30 @@ fn main() {
             let targets_db = DynamicFastXReader::from_file(&targetfile).unwrap().into_db().unwrap();
         
             let (coverages, mismatches) = compute_coverage(&targets_db, &bait_db, d, g, m);
+
+            // Write coverage
             if let Some(reso) = resolution {
                 let cov_averages = coverage::into_resolution(coverages, *reso);
-                coverage::write_as_csv(cov_averages, &mut out);
-
-                if let Some(mut mismatch_out) = mismatch_out{
-                    let mismatch_averages = coverage::into_resolution(mismatches, *reso);
-                    coverage::write_as_csv(mismatch_averages, &mut mismatch_out);
-                }
-
+                coverage::write_as_csv(cov_averages, &mut out, |x| format!("{}", x));
             } else{
-                coverage::write_as_csv(coverages, &mut out);
+                coverage::write_as_csv(coverages, &mut out, |x| format!("{}", x));
             }
-            
+
+            // Write mismatches if needed
+            if let Some(mut mismatch_out) = mismatch_out{
+                if let Some(_) = resolution {
+                    unimplemented!("Resolution not implemented for mismatch output");
+                } else{
+                    let formatter = 
+                    |x: &u32| if *x == u32::MAX { 
+                        "*".to_string() 
+                    } else {
+                        format!("{}", x)
+                    };
+                    coverage::write_as_csv(mismatches, &mut mismatch_out, formatter);
+                }
+            }
+
         }
         _ => {
             log::error!("Unknown subcommand");

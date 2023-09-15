@@ -20,7 +20,7 @@ fn update_coverage(coverages: &mut Vec<Vec<u32>>, mismatches: &mut Vec<Vec<u32>>
     }
 }
 
-pub fn write_as_csv<T: std::fmt::Display>(lines: Vec<Vec<T>>, out: &mut impl Write){
+pub fn write_as_csv<T: std::fmt::Display, F: Fn(&T) -> String>(lines: Vec<Vec<T>>, out: &mut impl Write, formatter: F){
     for v in lines.iter() {
         // Write v as a line of comma-separated values
         for (i, x) in v.iter().enumerate(){
@@ -28,7 +28,7 @@ pub fn write_as_csv<T: std::fmt::Display>(lines: Vec<Vec<T>>, out: &mut impl Wri
                 write!(out, ",").unwrap();
                 
             }
-            write!(out, "{}", x).unwrap();
+            write!(out, "{}", formatter(x)).unwrap();
         }
         write!(out, "\n").unwrap();
     }
