@@ -142,6 +142,12 @@ fn main() {
             .required(true)
             .value_parser(clap::value_parser!(PathBuf))
         )
+        .arg(Arg::new("mismatch-out")
+            .help("Output csv file for the mismatch data.")
+            .long_help("Output csv file that is like the output file, but instead of coverage, it reports the number of mismatches in the best bait covering each position, or an asterisk if there is no bait coovering the position.")
+            .long("mismatch-out")
+            .value_parser(clap::value_parser!(PathBuf))
+        )
     );
 
     
@@ -160,12 +166,13 @@ fn main() {
             let m: usize = *sub_matches.get_one("minimizer-len").unwrap();
             let cutoff: f64 = *sub_matches.get_one("cutoff").unwrap();
             let randomize: bool = sub_matches.get_flag("randomize");
+
             if randomize { // TODO
                 std::unimplemented!("Randomization not implemented yet");
             }
         
             let reader = DynamicFastXReader::from_file(infile).unwrap();
-            let mut writer = std::io::BufWriter::new(std::fs::File::create(outfile).unwrap()); // Let's open this right away to crash early if there's a problem
+            let mut writer = std::io::BufWriter::new(std::fs::File::create(outfile).unwrap()); // Let's open this right away to crash early if there's a problem            
 
             info!("Reading sequences from {}", infile.display());
             let seq_db = Box::new(reader.into_db().unwrap());
@@ -184,15 +191,23 @@ fn main() {
             let g: usize = *sub_matches.get_one("seed-len").unwrap();
             let m: usize = *sub_matches.get_one("minimizer-len").unwrap();
             let resolution = sub_matches.get_one::<usize>("resolution");
+            let mismatch_outfile: Option<&PathBuf> = sub_matches.get_one("mismatch-out");
 
+            let mut mismatch_out = mismatch_outfile.map(|path| std::io::BufWriter::new(std::fs::File::create(path).unwrap()));
             let mut out = std::io::BufWriter::new(std::fs::File::create(outfile).unwrap());
             let bait_db = DynamicFastXReader::from_file(&baitfile).unwrap().into_db().unwrap(); // TODO: print info log
             let targets_db = DynamicFastXReader::from_file(&targetfile).unwrap().into_db().unwrap();
         
-            let coverages = compute_coverage(&targets_db, &bait_db, d, g, m);
+            let (coverages, mismatches) = compute_coverage(&targets_db, &bait_db, d, g, m);
             if let Some(reso) = resolution {
-                let averages = coverage::into_resolution(coverages, *reso);
-                coverage::write_as_csv(averages, &mut out);
+                let cov_averages = coverage::into_resolution(coverages, *reso);
+                coverage::write_as_csv(cov_averages, &mut out);
+
+                if let Some(mut mismatch_out) = mismatch_out{
+                    let mismatch_averages = coverage::into_resolution(mismatches, *reso);
+                    coverage::write_as_csv(mismatch_averages, &mut mismatch_out);
+                }
+
             } else{
                 coverage::write_as_csv(coverages, &mut out);
             }

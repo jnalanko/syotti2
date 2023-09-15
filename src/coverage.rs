@@ -4,15 +4,17 @@ use jseqio::seq_db::SeqDB;
 use std::io::Write;
 use crate::minimizer_index::MinimizerIndex;
 
-fn update_coverage(coverages: &mut Vec<Vec<u32>>, bait: &[u8], index: &MinimizerIndex, targets_db: &SeqDB, hamming_distance: usize, k: usize){
+fn update_coverage(coverages: &mut Vec<Vec<u32>>, mismatches: &mut Vec<Vec<u32>>, bait: &[u8], index: &MinimizerIndex, targets_db: &SeqDB, hamming_distance: usize, k: usize){
     let candidates = index.get_exact_alignment_candidates(bait);
 
     for (target_id, target_start) in candidates{
         let target = &targets_db.get(target_id).seq[target_start .. target_start + bait.len()];
-        if syotti2::hamming_distance_not_matching_N(bait, target) <= hamming_distance{
+        let distance = syotti2::hamming_distance_not_matching_N(bait, target);
+        if distance <= hamming_distance{
             for i in 0..bait.len(){
                 // Add 1 to the coverage using saturating add so we don't overflow
                 coverages[target_id][target_start + i] = coverages[target_id][target_start + i].saturating_add(1);
+                mismatches[target_id][target_start + i] = std::cmp::min(mismatches[target_id][target_start + i], distance as u32);
             }
         }
     }
@@ -34,23 +36,27 @@ pub fn write_as_csv<T: std::fmt::Display>(lines: Vec<Vec<T>>, out: &mut impl Wri
 
 // Note: searches both forward and reverse complement. This means that if a bait overlaps with its own
 // reverse complement, it could contribute 2 to the coverage depth at the overlapping positions.
-pub fn compute_coverage(targets_db: &SeqDB, bait_db: &SeqDB, d: usize, g: usize, m: usize) -> Vec<Vec<u32>>{
-    
+pub fn compute_coverage(targets_db: &SeqDB, bait_db: &SeqDB, d: usize, g: usize, m: usize) -> (Vec<Vec<u32>>, Vec<Vec<u32>>){
+
+    type IntType = u32; // 32 bits ought to be enough for anyone
+
     let index = MinimizerIndex::new(&targets_db, g, m);
 
     // Initialize coverage depth vectors
     // coverages[i][j] = depth in target i at position j
-    let mut coverages = Vec::<Vec::<u32>>::new(); // 32 bits ought to be enough for anyone
+    let mut coverages = Vec::<Vec::<IntType>>::new(); 
+    let mut mismatches = Vec::<Vec::<IntType>>::new();
     for i in 0..targets_db.sequence_count(){
         coverages.push(vec![0; targets_db.get(i).seq.len()]);
+        mismatches.push(vec![IntType::MAX; targets_db.get(i).seq.len()]);
     }
 
     for bait in bait_db.iter() {
-        update_coverage(&mut coverages, bait.seq, &index, targets_db, d, g);
-        update_coverage(&mut coverages, reverse_complement(bait.seq).as_slice(), &index, targets_db, d, g);
+        update_coverage(&mut coverages, &mut mismatches, bait.seq, &index, targets_db, d, g);
+        update_coverage(&mut coverages, &mut mismatches, reverse_complement(bait.seq).as_slice(), &index, targets_db, d, g);
     }
 
-    coverages
+    (coverages, mismatches)
 
 }
 
@@ -130,7 +136,7 @@ mod tests{
 
         let answer = vec![t0_answer, t1_answer, t2_answer];
 
-        let coverages = compute_coverage(&target_db, &bait_db,  1, 5, 3);
+        let (coverages, _) = compute_coverage(&target_db, &bait_db,  1, 5, 3);
 
         assert_eq!(answer, coverages);
     }
