@@ -23,7 +23,7 @@ Commands:
 
 Options:
   -j, --threads <threads>  Number of threads to use [default: 8]
-  -h, --help               Print hel
+  -h, --help               Print help
 ```
 
 ## Subcommand `design`
