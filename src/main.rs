@@ -195,7 +195,7 @@ fn main() {
         }
         Some(("coverage", sub_matches)) => {
             let targetfile: &PathBuf = sub_matches.get_one("targets").unwrap();
-            let outfile: &PathBuf = sub_matches.get_one("output").unwrap();
+            let outfile: &PathBuf = sub_matches.get_one("coverage-out").unwrap();
             let baitfile: &PathBuf = sub_matches.get_one("baits").unwrap();
             let d: usize = *sub_matches.get_one("hamming-distance").unwrap();
             let g: usize = *sub_matches.get_one("seed-len").unwrap();
