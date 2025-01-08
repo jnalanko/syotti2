@@ -140,7 +140,7 @@ fn main() {
         .arg(Arg::new("coverage-out")
             .help("Output csv file for the coverage data.")
             .long_help("The output file will have one file per sequence in the target file, containing n comma-separated integers, where n is the length of the sequence. The i'th integer is the number of baits covering the i'th position in the sequence.")
-            .long("output")
+            .long("coverage-out")
             .short('o')
             .required(true)
             .value_parser(clap::value_parser!(PathBuf))
