@@ -137,7 +137,7 @@ fn main() {
             .default_value("12")
             .value_parser(clap::value_parser!(usize))
         )
-        .arg(Arg::new("output")
+        .arg(Arg::new("coverage-out")
             .help("Output csv file for the coverage data.")
             .long_help("The output file will have one file per sequence in the target file, containing n comma-separated integers, where n is the length of the sequence. The i'th integer is the number of baits covering the i'th position in the sequence.")
             .long("output")
@@ -149,6 +149,13 @@ fn main() {
             .help("Output csv file for the mismatch data.")
             .long_help("Output csv file that is like the output file, but instead of coverage, it reports the number of mismatches in the best bait covering each position, or an asterisk if there is no bait coovering the position.")
             .long("mismatch-out")
+            .value_parser(clap::value_parser!(PathBuf))
+        )
+        .arg(Arg::new("coverage-out-picture")
+            .help("Output png file for the coverage data.")
+            .long_help("Visualize the coverage depth into a png image with this path. Beware: the height is equal to the number of targets, and the width is equal to the length of the longest target. Use --resolution to reduce the width to avoid having an enormous image. There is currently no way to reduce the height.")
+            .long("coverage-out-picture")
+            .short('p')
             .value_parser(clap::value_parser!(PathBuf))
         )
     );
@@ -195,6 +202,7 @@ fn main() {
             let m: usize = *sub_matches.get_one("minimizer-len").unwrap();
             let resolution = sub_matches.get_one::<usize>("resolution");
             let mismatch_outfile: Option<&PathBuf> = sub_matches.get_one("mismatch-out");
+            let coverage_picture_outfile: Option<&PathBuf> = sub_matches.get_one("coverage-out-picture");
 
             let mut mismatch_out = mismatch_outfile.map(|path| std::io::BufWriter::new(std::fs::File::create(path).unwrap()));
             let mut out = std::io::BufWriter::new(std::fs::File::create(outfile).unwrap());
@@ -203,12 +211,21 @@ fn main() {
         
             let (coverages, mismatches) = compute_coverage(&targets_db, &bait_db, d, g, m);
 
-            // Write coverage
+            // Write coverage numbers, and possibly a picture
             if let Some(reso) = resolution {
+                // TODO: make a generic function so that these if and else branches don't repeat the same code
                 let cov_averages = coverage::into_resolution(coverages, *reso);
-                coverage::write_as_csv(cov_averages, &mut out, |x| format!("{}", x));
+                coverage::write_as_csv(&cov_averages, &mut out, |x| format!("{}", x));
+                if let Some(image_outpath) = coverage_picture_outfile {
+                    let mut image_out = std::fs::File::create(image_outpath).unwrap();
+                    coverage::write_as_png(cov_averages, &mut image_out);
+                }
             } else{
-                coverage::write_as_csv(coverages, &mut out, |x| format!("{}", x));
+                coverage::write_as_csv(&coverages, &mut out, |x| format!("{}", x));
+                if let Some(image_outpath) = coverage_picture_outfile {
+                    let mut image_out = std::fs::File::create(image_outpath).unwrap();
+                    coverage::write_as_png(coverages, &mut image_out);
+                }
             }
 
             // Write mismatches if needed
@@ -222,7 +239,7 @@ fn main() {
                     } else {
                         format!("{}", x)
                     };
-                    coverage::write_as_csv(mismatches, &mut mismatch_out, formatter);
+                    coverage::write_as_csv(&mismatches, &mut mismatch_out, formatter);
                 }
             }
 

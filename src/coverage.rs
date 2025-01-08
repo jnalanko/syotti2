@@ -1,7 +1,7 @@
 use std::path::Path;
 use jseqio::{reader::*, reverse_complement};
 use jseqio::seq_db::SeqDB;
-use std::io::Write;
+use std::io::{BufWriter, Write};
 use crate::minimizer_index::MinimizerIndex;
 
 fn update_coverage(coverages: &mut Vec<Vec<u32>>, mismatches: &mut Vec<Vec<u32>>, bait: &[u8], index: &MinimizerIndex, targets_db: &SeqDB, hamming_distance: usize, k: usize){
@@ -20,7 +20,7 @@ fn update_coverage(coverages: &mut Vec<Vec<u32>>, mismatches: &mut Vec<Vec<u32>>
     }
 }
 
-pub fn write_as_csv<T: std::fmt::Display, F: Fn(&T) -> String>(lines: Vec<Vec<T>>, out: &mut impl Write, formatter: F){
+pub fn write_as_csv<T: std::fmt::Display, F: Fn(&T) -> String>(lines: &Vec<Vec<T>>, out: &mut impl Write, formatter: F){
     for v in lines.iter() {
         // Write v as a line of comma-separated values
         for (i, x) in v.iter().enumerate(){
@@ -32,6 +32,56 @@ pub fn write_as_csv<T: std::fmt::Display, F: Fn(&T) -> String>(lines: Vec<Vec<T>
         }
         write!(out, "\n").unwrap();
     }
+}
+
+// T is Generic over any type that is convertible to f64
+pub fn write_as_png<T: Into<f64> + Clone>(coverages: Vec<Vec<T>>, out: &mut impl Write){
+    let max_len = coverages.iter().map(|x| x.len()).max().unwrap();
+    let mut max_coverage = 0.0;
+    for v in coverages.iter() {
+        for x in v.iter(){
+            let val: f64 = x.clone().into();
+            max_coverage = f64::max(max_coverage, val);
+        }
+    }
+
+
+    let width = max_len;
+    let height = coverages.len();
+
+    let mut encoder = png::Encoder::new(BufWriter::new(out), width as u32, height as u32);
+    encoder.set_color(png::ColorType::Rgb);
+    encoder.set_depth(png::BitDepth::Eight);
+
+    let mut pixels = vec![0_u8; width*height*3]; // Three color components per pixel
+    let coverage_floor = 0.1; // This will be zero brightness. Coverages below this are shown in red.
+    let log_max = f64::ln(max_coverage as f64); // This will be fully white
+    let brigtness_scaling_factor = 255.0_f64 / log_max; // log_max * c = 255
+
+    for (row, v) in coverages.iter().enumerate() {
+        for (col, x) in v.iter().enumerate(){
+            let x: f64 = x.clone().into();
+            if x < coverage_floor {
+                pixels[row*width*3 + col*3] = 255; // Red
+                pixels[row*width*3 + col*3 + 1] = 0; // Green
+                pixels[row*width*3 + col*3 + 2] = 0; // Blue
+            } else {
+                let mut val = f64::ln(x / coverage_floor); // Now this should be >= 0
+                val = f64::max(val, 0.0); // Clamp to zero in case of floating point inaccuracies which could make val slightly negative
+                val *= brigtness_scaling_factor; // Now the brightest pixel should have val = 255
+                let brightness = f64::min(val, 255.0) as u8; // Again clamp in case of floating point weirdness
+
+                pixels[row*width*3 + col*3] = brightness; // Red
+                pixels[row*width*3 + col*3 + 1] = brightness; // Green
+                pixels[row*width*3 + col*3 + 2] = brightness; // Blue
+            }
+        }
+    }
+
+    let mut writer = encoder.write_header().unwrap();
+    writer.write_image_data(&pixels).unwrap();
+
+
 }
 
 // Note: searches both forward and reverse complement. This means that if a bait overlaps with its own
