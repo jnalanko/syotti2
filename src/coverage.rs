@@ -51,7 +51,9 @@ pub fn compute_coverage(targets_db: &SeqDB, bait_db: &SeqDB, d: usize, g: usize,
         mismatches.push(vec![IntType::MAX; targets_db.get(i).seq.len()]);
     }
 
+    let progress = indicatif::ProgressBar::new(bait_db.sequence_count() as u64);
     for bait in bait_db.iter() {
+        progress.inc(1);
         update_coverage(&mut coverages, &mut mismatches, bait.seq, &index, targets_db, d, g);
         update_coverage(&mut coverages, &mut mismatches, reverse_complement(bait.seq).as_slice(), &index, targets_db, d, g);
     }
