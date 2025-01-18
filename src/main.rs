@@ -158,6 +158,11 @@ fn main() {
             .short('p')
             .value_parser(clap::value_parser!(PathBuf))
         )
+        .arg(Arg::new("variable-resolution")
+            .help("Relevant if --resolution is given. In enabled, makes it so that the resolution of each coverage vector is proportional to its length, such that the longest target has resolution equal to the value passed to --resolution. This is especially useful with --coverage-out-picture for better visualization.")
+            .long("variable-resolution")
+            .action(clap::ArgAction::SetTrue)
+        )
     );
 
     
@@ -201,10 +206,11 @@ fn main() {
             let g: usize = *sub_matches.get_one("seed-len").unwrap();
             let m: usize = *sub_matches.get_one("minimizer-len").unwrap();
             let resolution = sub_matches.get_one::<usize>("resolution");
+            let variable_resolution = sub_matches.get_flag("variable-resolution");
             let mismatch_outfile: Option<&PathBuf> = sub_matches.get_one("mismatch-out");
             let coverage_picture_outfile: Option<&PathBuf> = sub_matches.get_one("coverage-out-picture");
 
-            let mut mismatch_out = mismatch_outfile.map(|path| std::io::BufWriter::new(std::fs::File::create(path).unwrap()));
+            let mismatch_out = mismatch_outfile.map(|path| std::io::BufWriter::new(std::fs::File::create(path).unwrap()));
             let mut out = std::io::BufWriter::new(std::fs::File::create(outfile).unwrap());
             let bait_db = DynamicFastXReader::from_file(&baitfile).unwrap().into_db().unwrap(); // TODO: print info log
             let targets_db = DynamicFastXReader::from_file(&targetfile).unwrap().into_db().unwrap();
@@ -214,7 +220,7 @@ fn main() {
             // Write coverage numbers, and possibly a picture
             if let Some(reso) = resolution {
                 // TODO: make a generic function so that these if and else branches don't repeat the same code
-                let cov_averages = coverage::into_resolution(coverages, *reso);
+                let cov_averages = coverage::into_resolution(coverages, *reso, variable_resolution);
                 coverage::write_as_csv(&cov_averages, &mut out, |x| format!("{}", x));
                 if let Some(image_outpath) = coverage_picture_outfile {
                     let mut image_out = std::fs::File::create(image_outpath).unwrap();

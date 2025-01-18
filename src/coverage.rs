@@ -132,15 +132,25 @@ pub fn into_moving_average(v: Vec<u32>, window_size: usize) -> Vec<f32>{
     avgs
 }
 
-// Samples the moving average of the coverage vectors to get exactly 'points' points
-pub fn into_resolution(coverages: Vec<Vec<u32>>, points: usize) -> Vec<Vec<f32>>{
+// Samples the moving average of the coverage vectors to get exactly 'points' points for each. If variable_resolution is
+// given, then every coverage vector gets a number of points proportional to its length, such that the longest
+// one gets 'points' points.
+pub fn into_resolution(coverages: Vec<Vec<u32>>, points: usize, variable_resolution: bool) -> Vec<Vec<f32>>{
     let mut new_covs = Vec::<Vec::<f32>>::new();
+    let max_len = coverages.iter().fold(0_usize, |acc, v| acc.max(v.len()));
     for cov in coverages.into_iter(){
-        let window_len = std::cmp::max(cov.len() / points, 1);
-        let sampling_step = cov.len() as f64 / points as f64;
+        let r = if variable_resolution { // Number of points in result
+            let r = ((cov.len() as f64 / max_len as f64) * points as f64).round() as usize;
+            r.max(1) // No zero points because that's weird
+        } else {
+            points
+        };
+
+        let window_len = std::cmp::max(cov.len() / r, 1);
+        let sampling_step = cov.len() as f64 / r as f64;
         let avgs = into_moving_average(cov, window_len);
 
-        let mut sampled_points: Vec<f32> = vec![0.0; points];
+        let mut sampled_points: Vec<f32> = vec![0.0; r];
         
         for i in 0..points{
             sampled_points[i] = avgs[i*sampling_step as usize];
