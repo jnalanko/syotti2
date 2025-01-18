@@ -150,7 +150,7 @@ pub fn into_resolution(coverages: Vec<Vec<u32>>, points: usize, variable_resolut
         let sampling_step = cov.len() as f64 / r as f64;
         let avgs = into_moving_average(cov, window_len);
 
-        let mut sampled_points: Vec<f32> = vec![0.0; r];
+        let mut sampled_points: Vec<f32> = vec![0.0; max_len];
         
         for i in 0..points{
             sampled_points[i] = avgs[i*sampling_step as usize];
