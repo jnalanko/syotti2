@@ -25,6 +25,12 @@ fn pad_to_equal_length<T: Copy>(v: &mut Vec<Vec<T>>, pad_element: T) {
     }
 }
 
+fn write_picture<T: Into<f64> + Copy + Clone>(mut coverages: Vec<Vec<T>>, pad_element: T, image_outpath: &std::path::Path) {
+    pad_to_equal_length(&mut coverages, pad_element);
+    let mut image_out = std::fs::File::create(image_outpath).unwrap();
+    coverage::write_as_png(coverages, &mut image_out);
+}
+
 fn main() {
     if std::env::var("RUST_LOG").is_err(){
         std::env::set_var("RUST_LOG", "info");
@@ -228,22 +234,18 @@ fn main() {
 
             // Write coverage numbers, and possibly a picture
             if let Some(reso) = resolution {
-                // TODO: make a generic function so that these if and else branches don't repeat the same code
-                let mut cov_averages = coverage::into_resolution(coverages, *reso, variable_resolution);
+                let cov_averages = coverage::into_resolution(coverages, *reso, variable_resolution);
                 coverage::write_as_csv(&cov_averages, &mut out, |x| format!("{}", x));
                 if let Some(image_outpath) = coverage_picture_outfile {
-                    pad_to_equal_length(&mut cov_averages, -1.0);
-                    let mut image_out = std::fs::File::create(image_outpath).unwrap();
-                    coverage::write_as_png(cov_averages, &mut image_out);
+                    write_picture(cov_averages, -1.0, image_outpath);
                 }
-            } else{
+            } else { // Write coverages as-is without smoothing to resolution
                 coverage::write_as_csv(&coverages, &mut out, |x| format!("{}", x));
+
+                // Reinterpert as i32 to be able to use -1 as a padding value:
+                let icoverages: Vec<Vec<i32>> = coverages.into_iter().map(|v| v.into_iter().map(|x| i32::try_from(x).unwrap()).collect()).collect();
                 if let Some(image_outpath) = coverage_picture_outfile {
-                    // Reinterpert as i32 to be able to use -1 as a padding value:
-                    let mut icoverages: Vec<Vec<i32>> = coverages.into_iter().map(|v| v.into_iter().map(|x| i32::try_from(x).unwrap()).collect()).collect();
-                    pad_to_equal_length(&mut icoverages, -1);
-                    let mut image_out = std::fs::File::create(image_outpath).unwrap();
-                    coverage::write_as_png(icoverages, &mut image_out);
+                    write_picture(icoverages, -1, image_outpath);
                 }
             }
 
