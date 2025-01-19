@@ -61,7 +61,11 @@ pub fn write_as_png<T: Into<f64> + Clone>(coverages: Vec<Vec<T>>, out: &mut impl
     for (row, v) in coverages.iter().enumerate() {
         for (col, x) in v.iter().enumerate(){
             let x: f64 = x.clone().into();
-            if x < coverage_floor {
+            if x < 0.0 { // Padding
+                pixels[row*width*3 + col*3] = 251; // Red
+                pixels[row*width*3 + col*3 + 1] = 255; // Green
+                pixels[row*width*3 + col*3 + 2] = 43; // Blue
+            } else if x < coverage_floor {
                 pixels[row*width*3 + col*3] = 255; // Red
                 pixels[row*width*3 + col*3 + 1] = 0; // Green
                 pixels[row*width*3 + col*3 + 2] = 0; // Blue
@@ -150,7 +154,7 @@ pub fn into_resolution(coverages: Vec<Vec<u32>>, points: usize, variable_resolut
         let sampling_step = cov.len() as f64 / r as f64;
         let avgs = into_moving_average(cov, window_len);
 
-        let mut sampled_points: Vec<f32> = vec![0.0; points]; // Padding in the end in case of variable_resolution
+        let mut sampled_points: Vec<f32> = vec![0.0; r];
         
         for i in 0..r{
             sampled_points[i] = avgs[i*sampling_step as usize];

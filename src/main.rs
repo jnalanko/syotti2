@@ -16,6 +16,15 @@ use log::{info, error};
 
 use jseqio::seq_db::SeqDB;
 
+fn pad_to_equal_length<T: Copy>(v: &mut Vec<Vec<T>>, pad_element: T) {
+    let max_len = v.iter().fold(0_usize, |acc, row| acc.max(row.len()));
+    for row in v.iter_mut() {
+        while row.len() < max_len {
+            row.push(pad_element);
+        }
+    }
+}
+
 fn main() {
     if std::env::var("RUST_LOG").is_err(){
         std::env::set_var("RUST_LOG", "info");
@@ -220,17 +229,21 @@ fn main() {
             // Write coverage numbers, and possibly a picture
             if let Some(reso) = resolution {
                 // TODO: make a generic function so that these if and else branches don't repeat the same code
-                let cov_averages = coverage::into_resolution(coverages, *reso, variable_resolution);
+                let mut cov_averages = coverage::into_resolution(coverages, *reso, variable_resolution);
                 coverage::write_as_csv(&cov_averages, &mut out, |x| format!("{}", x));
                 if let Some(image_outpath) = coverage_picture_outfile {
+                    pad_to_equal_length(&mut cov_averages, -1.0);
                     let mut image_out = std::fs::File::create(image_outpath).unwrap();
                     coverage::write_as_png(cov_averages, &mut image_out);
                 }
             } else{
                 coverage::write_as_csv(&coverages, &mut out, |x| format!("{}", x));
                 if let Some(image_outpath) = coverage_picture_outfile {
+                    // Reinterpert as i32 to be able to use -1 as a padding value:
+                    let mut icoverages: Vec<Vec<i32>> = coverages.into_iter().map(|v| v.into_iter().map(|x| i32::try_from(x).unwrap()).collect()).collect();
+                    pad_to_equal_length(&mut icoverages, -1);
                     let mut image_out = std::fs::File::create(image_outpath).unwrap();
-                    coverage::write_as_png(coverages, &mut image_out);
+                    coverage::write_as_png(icoverages, &mut image_out);
                 }
             }
 
