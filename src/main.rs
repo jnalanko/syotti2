@@ -182,7 +182,7 @@ fn main() {
         )
         .arg(Arg::new("concat-into-rectangular")
             .help("If the total number of bases is n, then concatenates all coverage vectors and splits those into sqrt(n) vectors of length sqrt(n).")
-            .long("concat_into-rectangular")
+            .long("concat-into-rectangular")
             .action(ArgAction::SetTrue)
         )
         .arg(Arg::new("variable-resolution")
