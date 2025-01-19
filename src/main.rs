@@ -16,6 +16,13 @@ use log::{info, error};
 
 use jseqio::seq_db::SeqDB;
 
+fn rectangularize<T: Copy>(vecs: Vec<Vec<T>>) -> Vec<Vec<T>> {
+    let concat = vecs.into_iter().reduce(|mut acc, v| {acc.extend(v); acc}).unwrap();
+    let row_len = concat.len().isqrt();
+    let rows: Vec<Vec<T>> = concat.chunks(row_len).map(|v| v.to_vec()).collect();
+    rows
+}
+
 fn pad_to_equal_length<T: Copy>(v: &mut Vec<Vec<T>>, pad_element: T) {
     let max_len = v.iter().fold(0_usize, |acc, row| acc.max(row.len()));
     for row in v.iter_mut() {
@@ -173,6 +180,11 @@ fn main() {
             .short('p')
             .value_parser(clap::value_parser!(PathBuf))
         )
+        .arg(Arg::new("concat-into-rectangular")
+            .help("If the total number of bases is n, then concatenates all coverage vectors and splits those into sqrt(n) vectors of length sqrt(n).")
+            .long("concat_into-rectangular")
+            .action(ArgAction::SetTrue)
+        )
         .arg(Arg::new("variable-resolution")
             .help("Relevant if --resolution is given. In enabled, makes it so that the resolution of each coverage vector is proportional to its length, such that the longest target has resolution equal to the value passed to --resolution. This is especially useful with --coverage-out-picture for better visualization.")
             .long("variable-resolution")
@@ -222,6 +234,7 @@ fn main() {
             let m: usize = *sub_matches.get_one("minimizer-len").unwrap();
             let resolution = sub_matches.get_one::<usize>("resolution");
             let variable_resolution = sub_matches.get_flag("variable-resolution");
+            let rectangularize_flag = sub_matches.get_flag("concat-into-rectangular");
             let mismatch_outfile: Option<&PathBuf> = sub_matches.get_one("mismatch-out");
             let coverage_picture_outfile: Option<&PathBuf> = sub_matches.get_one("coverage-out-picture");
 
@@ -230,7 +243,11 @@ fn main() {
             let bait_db = DynamicFastXReader::from_file(&baitfile).unwrap().into_db().unwrap(); // TODO: print info log
             let targets_db = DynamicFastXReader::from_file(&targetfile).unwrap().into_db().unwrap();
         
-            let (coverages, mismatches) = compute_coverage(&targets_db, &bait_db, d, g, m);
+            let (mut coverages, mut mismatches) = compute_coverage(&targets_db, &bait_db, d, g, m);
+            if rectangularize_flag {
+                coverages = rectangularize(coverages);
+                mismatches = rectangularize(mismatches);
+            }
 
             // Write coverage numbers, and possibly a picture
             if let Some(reso) = resolution {
