@@ -152,7 +152,7 @@ pub fn into_resolution(coverages: Vec<Vec<u32>>, points: usize, variable_resolut
 
         let mut sampled_points: Vec<f32> = vec![0.0; max_len];
         
-        for i in 0..points{
+        for i in 0..r{
             sampled_points[i] = avgs[i*sampling_step as usize];
         }
         new_covs.push(sampled_points);
