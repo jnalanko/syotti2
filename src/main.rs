@@ -16,9 +16,9 @@ use log::{info, error};
 
 use jseqio::seq_db::SeqDB;
 
-fn rectangularize<T: Copy>(vecs: Vec<Vec<T>>) -> Vec<Vec<T>> {
+fn concat_into_rows<T: Copy>(vecs: Vec<Vec<T>>, n_rows: usize) -> Vec<Vec<T>> {
     let concat = vecs.into_iter().reduce(|mut acc, v| {acc.extend(v); acc}).unwrap();
-    let row_len = concat.len().isqrt();
+    let row_len = concat.len().div_ceil(n_rows);
     let rows: Vec<Vec<T>> = concat.chunks(row_len).map(|v| v.to_vec()).collect();
     rows
 }
@@ -175,15 +175,15 @@ fn main() {
         )
         .arg(Arg::new("coverage-out-picture")
             .help("Output png file for the coverage data.")
-            .long_help("Visualize the coverage depth into a png image with this path. Beware: the height is equal to the number of targets, and the width is equal to the length of the longest target. Use --resolution to reduce the width to avoid having an enormous image. There is currently no way to reduce the height.")
+            .long_help("Visualize the coverage depth into a png image with this path. Beware: the height is equal to the number of targets, and the width is equal to the length of the longest target. Use --resolution to reduce the width to avoid having an enormous image. To reduce the height, check out concat-into-rows.")
             .long("coverage-out-picture")
             .short('p')
             .value_parser(clap::value_parser!(PathBuf))
         )
-        .arg(Arg::new("concat-into-rectangular")
-            .help("If the total number of bases is n, then concatenates all coverage vectors and splits those into sqrt(n) vectors of length sqrt(n).")
-            .long("concat-into-rectangular")
-            .action(ArgAction::SetTrue)
+        .arg(Arg::new("concat-into-rows")
+            .help("Let the total number of bases be n, and let this parameter be r. Concatenates the coverage vectors and splits the concatenation into ceil(n/r) rows.")
+            .long("concat-into-rows")
+            .value_parser(clap::value_parser!(usize))
         )
         .arg(Arg::new("variable-resolution")
             .help("Relevant if --resolution is given. In enabled, makes it so that the resolution of each coverage vector is proportional to its length, such that the longest target has resolution equal to the value passed to --resolution. This is especially useful with --coverage-out-picture for better visualization.")
@@ -234,7 +234,7 @@ fn main() {
             let m: usize = *sub_matches.get_one("minimizer-len").unwrap();
             let resolution = sub_matches.get_one::<usize>("resolution");
             let variable_resolution = sub_matches.get_flag("variable-resolution");
-            let rectangularize_flag = sub_matches.get_flag("concat-into-rectangular");
+            let concat_rows = sub_matches.get_one::<usize>("concat-into-row");
             let mismatch_outfile: Option<&PathBuf> = sub_matches.get_one("mismatch-out");
             let coverage_picture_outfile: Option<&PathBuf> = sub_matches.get_one("coverage-out-picture");
 
@@ -244,9 +244,9 @@ fn main() {
             let targets_db = DynamicFastXReader::from_file(&targetfile).unwrap().into_db().unwrap();
         
             let (mut coverages, mut mismatches) = compute_coverage(&targets_db, &bait_db, d, g, m);
-            if rectangularize_flag {
-                coverages = rectangularize(coverages);
-                mismatches = rectangularize(mismatches);
+            if let Some(n_rows) = concat_rows {
+                coverages = concat_into_rows(coverages, *n_rows);
+                mismatches = concat_into_rows(mismatches, *n_rows);
             }
 
             // Write coverage numbers, and possibly a picture
