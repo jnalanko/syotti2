@@ -280,7 +280,6 @@ fn main() {
             let variable_resolution = sub_matches.get_flag("variable-resolution");
             let concat_rows = sub_matches.get_one::<usize>("concat-into-rows");
 
-            let mut out = std::io::BufWriter::new(std::fs::File::create(outfile).unwrap());
             log::info!("Loading coverage values from {}", infile.display());
             let mut coverages = load_coverages(infile);
         
