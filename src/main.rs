@@ -281,21 +281,23 @@ fn main() {
             let concat_rows = sub_matches.get_one::<usize>("concat-into-rows");
 
             let mut out = std::io::BufWriter::new(std::fs::File::create(outfile).unwrap());
+            log::info!("Loading coverage values from {}", infile.display());
             let mut coverages = load_coverages(infile);
         
             if let Some(n_rows) = concat_rows {
+                log::info!("Concatenating and splitting into {} rows", n_rows);
                 coverages = concat_into_rows(coverages, *n_rows);
             }
 
             if let Some(reso) = resolution {
+                log::info!("Smoothing coverage into {} points per row", reso);
                 let cov_averages = coverage::into_resolution(coverages, *reso, variable_resolution);
-                coverage::write_as_csv(&cov_averages, &mut out, |x| format!("{}", x));
+                log::info!("Building the picture");
                 write_picture(cov_averages, -1.0, outfile);
             } else { // Write coverages as-is without smoothing to resolution
-                coverage::write_as_csv(&coverages, &mut out, |x| format!("{}", x));
-
                 // Reinterpert as i32 to be able to use -1 as a padding value:
                 let icoverages: Vec<Vec<i32>> = coverages.into_iter().map(|v| v.into_iter().map(|x| i32::try_from(x).unwrap()).collect()).collect();
+                log::info!("Building the picture");
                 write_picture(icoverages, -1, outfile);
             }
         }
