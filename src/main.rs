@@ -20,7 +20,7 @@ fn load_coverages(path: &std::path::Path) -> Vec<Vec<u32>> {
     let mut reader = std::io::BufReader::new(std::fs::File::open(path).unwrap());
     let mut line_buf = String::new();
     while reader.read_line(&mut line_buf).unwrap() > 0 {
-        let cov = line_buf.trim().split(' ').map(|s| s.parse::<u32>().unwrap()).collect();
+        let cov = line_buf.trim().split(',').map(|s| s.parse::<u32>().unwrap()).collect();
         coverages.push(cov);
         line_buf.clear();
     }
