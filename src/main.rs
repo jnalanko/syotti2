@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 mod design;
 mod minimizer_index;
 mod coverage;
@@ -7,15 +9,11 @@ use std::path::PathBuf;
 
 use clap::ArgAction;
 use coverage::compute_coverage;
-use coverage::into_moving_average;
 use jseqio::reader::*;
-use jseqio::writer::*;
-use jseqio::record::*;
 use clap::{Command, Arg};
 
-use log::{info, error};
+use log::info;
 
-use jseqio::seq_db::SeqDB;
 
 fn load_coverages(path: &std::path::Path) -> Vec<Vec<u32>> {
     let mut coverages: Vec<Vec<u32>> = vec![];
@@ -242,7 +240,7 @@ fn main() {
             let index = minimizer_index::MinimizerIndex::new(&seq_db, g, m);
         
             info!("Designing baits");
-            design::run_algorithm(&seq_db, &index, L, d, g, cutoff, &mut writer);
+            design::run_algorithm(&seq_db, &index, L, d, cutoff, &mut writer);
         }
         Some(("coverage", sub_matches)) => {
             let targetfile: &PathBuf = sub_matches.get_one("targets").unwrap();

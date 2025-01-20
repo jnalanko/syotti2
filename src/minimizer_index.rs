@@ -8,7 +8,7 @@ pub struct MinimizerIndex<'a>{
     bucket_starts: Vec<usize>,
     k: usize, // k-mer length
     m: usize, // Minimizer length
-    n_mmers: usize, // Number of distinct m-mers stored in the mphf
+    _n_mmers: usize, // Number of distinct m-mers stored in the mphf
 }
 
 // Keeps only parts of length at least k
@@ -86,6 +86,7 @@ struct Kmer{
 
 #[derive(Debug)]
 enum KmerEncodingError{
+    #[allow(dead_code)]
     InvalidNucleotide(char), // contains the offending char
     TooLong(usize), // Contains the length of the k-mer which was too long
 }
@@ -120,7 +121,7 @@ impl<'a> MinimizerIndex<'a>{
 
         let mut ans: Vec<(usize,usize)> = vec![];
         let minmer = match Kmer::from_ascii(minimizer){
-            Err(KmerEncodingError::InvalidNucleotide(c)) => {return vec![]}, // No matches
+            Err(KmerEncodingError::InvalidNucleotide(_)) => {return vec![]}, // No matches
             Err(KmerEncodingError::TooLong(len)) => {panic!("Sequence length {} shorter than k", len)},
             Ok(x) => x
         };
@@ -316,7 +317,7 @@ mod build{
         log::info!("Stored {} location pairs", locations.len());
         log::info!("Average bucket size: {:.2}", locations.len() as f64 / (bucket_starts.len() as f64 - 1.0)); // -1 because of end sentinel
     
-        MinimizerIndex{seq_storage: db, mphf, locations, bucket_starts, k, m, n_mmers}
+        MinimizerIndex{seq_storage: db, mphf, locations, bucket_starts, k, m, _n_mmers: n_mmers}
     }
 
 }

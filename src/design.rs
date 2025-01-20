@@ -1,12 +1,10 @@
-use std::collections::HashSet;
-
-use jseqio::{seq_db::SeqDB, writer::DynamicFastXWriter};
+use jseqio::seq_db::SeqDB;
 use log::info;
 use crate::minimizer_index::MinimizerIndex;
 
 
 // Returns the number of new bases covered
-fn mark_all_that_are_covered_by(bait: &[u8], cover_marks: &mut Vec<Vec<bool>>, index: &MinimizerIndex, db: &SeqDB, hamming_distance: usize, k: usize) -> usize{
+fn mark_all_that_are_covered_by(bait: &[u8], cover_marks: &mut Vec<Vec<bool>>, index: &MinimizerIndex, db: &SeqDB, hamming_distance: usize) -> usize{
     let align_starts = index.get_exact_alignment_candidates(bait);
     let mut new_covered_bases = 0_usize;
     for (seq_id, seq_pos) in align_starts{
@@ -21,7 +19,7 @@ fn mark_all_that_are_covered_by(bait: &[u8], cover_marks: &mut Vec<Vec<bool>>, i
     new_covered_bases
 }
 
-pub fn run_algorithm(db: &SeqDB, index: &MinimizerIndex, bait_len: usize, hamming_distance: usize, k: usize, cutoff: f64, fasta_out: &mut impl std::io::Write){
+pub fn run_algorithm(db: &SeqDB, index: &MinimizerIndex, bait_len: usize, hamming_distance: usize, cutoff: f64, fasta_out: &mut impl std::io::Write){
 
     // Initialize the cover marks to falses. False means not covered.
     let mut cover_marks = Vec::<Vec::<bool>>::new();
@@ -37,7 +35,7 @@ pub fn run_algorithm(db: &SeqDB, index: &MinimizerIndex, bait_len: usize, hammin
         let mut prev_end = 0_usize;
 
         // First first position in cover marks that is not yet covered
-        while let Some(mut bait_start) = cover_marks[seq_id][prev_end..].iter().position(|b| !*b){
+        while let Some(bait_start) = cover_marks[seq_id][prev_end..].iter().position(|b| !*b){
             let mut bait_start = prev_end + bait_start;
             let mut bait_end = bait_start + bait_len;
             if bait_end > rec.seq.len(){
@@ -50,8 +48,8 @@ pub fn run_algorithm(db: &SeqDB, index: &MinimizerIndex, bait_len: usize, hammin
                 bait_end -= excess;
             }
             let bait = &rec.seq[bait_start..bait_end];
-            total_covered += mark_all_that_are_covered_by(bait, &mut cover_marks, index, db, hamming_distance, k);
-            total_covered += mark_all_that_are_covered_by(&jseqio::reverse_complement(bait), &mut cover_marks, index, db, hamming_distance, k);
+            total_covered += mark_all_that_are_covered_by(bait, &mut cover_marks, index, db, hamming_distance);
+            total_covered += mark_all_that_are_covered_by(&jseqio::reverse_complement(bait), &mut cover_marks, index, db, hamming_distance);
 
             n_baits += 1;
             prev_end = bait_end;
@@ -72,10 +70,10 @@ pub fn run_algorithm(db: &SeqDB, index: &MinimizerIndex, bait_len: usize, hammin
 
 #[cfg(test)]
 mod tests{
-    use jseqio::reader;
 
     use super::*;
     
+    #[allow(non_snake_case)]
     #[test]
     fn test_hamming_distance_not_matching_N(){
         let s = b"AACCGGTTNN";
@@ -127,7 +125,7 @@ mod tests{
 
         let index = MinimizerIndex::new(&db, g, 1);
         let mut fasta_out = Vec::<u8>::new();
-        run_algorithm(&db, &index, bait_length, d, g, 1.0, &mut fasta_out);
+        run_algorithm(&db, &index, bait_length, d, 1.0, &mut fasta_out);
 
         let reader = jseqio::reader::DynamicFastXReader::new(std::io::Cursor::new(fasta_out)).unwrap();
         let bait_db = reader.into_db().unwrap();

@@ -1,10 +1,9 @@
-use std::path::Path;
-use jseqio::{reader::*, reverse_complement};
+use jseqio::reverse_complement;
 use jseqio::seq_db::SeqDB;
 use std::io::{BufWriter, Write};
 use crate::minimizer_index::MinimizerIndex;
 
-fn update_coverage(coverages: &mut Vec<Vec<u32>>, mismatches: &mut Vec<Vec<u32>>, bait: &[u8], index: &MinimizerIndex, targets_db: &SeqDB, hamming_distance: usize, k: usize){
+fn update_coverage(coverages: &mut Vec<Vec<u32>>, mismatches: &mut Vec<Vec<u32>>, bait: &[u8], index: &MinimizerIndex, targets_db: &SeqDB, hamming_distance: usize){
     let candidates = index.get_exact_alignment_candidates(bait);
 
     for (target_id, target_start) in candidates{
@@ -108,8 +107,8 @@ pub fn compute_coverage(targets_db: &SeqDB, bait_db: &SeqDB, d: usize, g: usize,
     let progress = indicatif::ProgressBar::new(bait_db.sequence_count() as u64);
     for bait in bait_db.iter() {
         progress.inc(1);
-        update_coverage(&mut coverages, &mut mismatches, bait.seq, &index, targets_db, d, g);
-        update_coverage(&mut coverages, &mut mismatches, reverse_complement(bait.seq).as_slice(), &index, targets_db, d, g);
+        update_coverage(&mut coverages, &mut mismatches, bait.seq, &index, targets_db, d);
+        update_coverage(&mut coverages, &mut mismatches, reverse_complement(bait.seq).as_slice(), &index, targets_db, d);
     }
 
     (coverages, mismatches)
