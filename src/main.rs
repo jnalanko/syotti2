@@ -258,10 +258,14 @@ fn main() {
         
             let (coverages, mismatches) = compute_coverage(&targets_db, &bait_db, d, g, m, n_threads);
 
+            log::info!("Writing coverage to {}", outfile.display());
             coverage::write_as_csv(&coverages, &mut out, |x| format!("{}", x));
 
             // Write mismatches if needed
             if let Some(mut mismatch_out) = mismatch_out {
+                
+                // This unwrap can't fail because of the if let
+                log::info!("Writing mismatches to {}", mismatch_outfile.unwrap().display()); 
                 let formatter = 
                 |x: &u32| if *x == u32::MAX { 
                     "*".to_string() 
@@ -270,6 +274,8 @@ fn main() {
                 };
                 coverage::write_as_csv(&mismatches, &mut mismatch_out, formatter);
             }
+
+            log::info!("Finished");
         }
         Some(("coverage-picture", sub_matches)) => {
             let outfile: &PathBuf = sub_matches.get_one("outfile").unwrap();

@@ -121,9 +121,7 @@ pub fn compute_coverage(targets_db: &SeqDB, bait_db: &SeqDB, d: usize, g: usize,
         });
     });
 
-    log::info!("Converting to non-atomic integers");
-
-    // TODO: does this make copies and have 2x memory overhead?
+    // This seems to compile to basically a no-op! At least this takes no time at all.
     let non_atomic_coverages = coverages.into_iter().map(|v| v.into_iter().map(|x| x.into_inner()).collect()).collect();
     let non_atomic_mismatches = mismatches.into_iter().map(|v| v.into_iter().map(|x| x.into_inner()).collect()).collect();
 
