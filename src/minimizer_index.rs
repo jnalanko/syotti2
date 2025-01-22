@@ -48,7 +48,7 @@ fn get_minimizer_position(kmer: &[u8], m: usize) -> usize{
     min_pos
 }
 
-// The output will be stored to the positions-vector
+// The output will be stored to the positions-vector. The vector is cleared in the function.
 // Will not return minimizers for k-mers with non-DNA characters
 fn get_minimizer_positions(seq: &[u8], positions: &mut Vec<usize>, k: usize, m: usize){
 
@@ -111,27 +111,36 @@ impl Kmer{
     }
 }
 
+// Return None if the sequence has invalid nucleotide characters
+fn bitpack_ascii(seq: &[u8]) -> Option<Kmer> {
+    match Kmer::from_ascii(seq){
+        Err(KmerEncodingError::InvalidNucleotide(_)) => None,
+        Err(KmerEncodingError::TooLong(len)) => {panic!("Sequence length {} shorter than k", len)},
+        Ok(x) => Some(x)
+    }
+}
+
 impl<'a> MinimizerIndex<'a>{
 
-    // Returns all occurrences of the query k-mer
-    pub fn lookup_kmer(&self, kmer: &[u8]) -> Vec<(usize, usize)>{
-        assert!(kmer.len() == self.k);
-        let min_pos = get_minimizer_position(kmer, self.m);
-        let minimizer = &kmer[min_pos .. min_pos + self.m];
-
-        let mut ans: Vec<(usize,usize)> = vec![];
-        let minmer = match Kmer::from_ascii(minimizer){
+    // Returns all occurrences of the query k-mer, given its minmer and the starting
+    // position of the minmer in the k-mer.
+    // The inputs must be so that kmer[minmer_start..minmer_start+m] = minmer
+    // Returns pairs (seq_id, pos)
+    pub fn lookup_kmer_given_minmer(&self, kmer: &[u8], minmer: &[u8], minmer_start: usize) -> Vec<(usize, usize)> {
+        let minmer = match Kmer::from_ascii(minmer){
             Err(KmerEncodingError::InvalidNucleotide(_)) => {return vec![]}, // No matches
             Err(KmerEncodingError::TooLong(len)) => {panic!("Sequence length {} shorter than k", len)},
             Ok(x) => x
         };
+
+        let mut ans: Vec<(usize,usize)> = vec![];
 
         if let Some(bucket) = self.mphf.try_hash(&minmer){
             let bucket_range = self.bucket_starts[bucket as usize]..self.bucket_starts[bucket as usize + 1];
             for (seq_id, seq_pos) in self.locations[bucket_range].iter(){
                 
                 // Start of the k-mer that contains this minimizer occurrence:
-                let start = *seq_pos as i64 - min_pos as i64;
+                let start = *seq_pos as i64 - minmer_start as i64;
 
                 // Check if this occurrence is real
                 if start >= 0 && start + self.k as i64 <= self.seq_storage.get(*seq_id as usize).seq.len() as i64 {
@@ -146,23 +155,50 @@ impl<'a> MinimizerIndex<'a>{
         }
 
         ans
+
     }
 
-    // Searches for all k-mer of the query and 
+    // Returns all occurrences of the query k-mer
+    pub fn lookup_kmer(&self, kmer: &[u8]) -> Vec<(usize, usize)>{
+        assert!(kmer.len() == self.k);
+        let min_pos = get_minimizer_position(kmer, self.m);
+        let minimizer = &kmer[min_pos .. min_pos + self.m];
+        self.lookup_kmer_given_minmer(kmer, minimizer, min_pos)
+    }
+
+    // Looks up all minimizers of the query and returns all places where an exact
+    // alignment could start so that the query aligns with one of its minimizers. 
     // returns pairs (i,j) such that seq might be found in sequence i starting from position j
+    // As long as the sequence has length at least k, all exact matches to the query are
+    // guaranteed to be within the candidate set.
     pub fn get_exact_alignment_candidates(&self, query: &[u8]) -> Vec<(usize,usize)>{
-        let mut align_starts = std::collections::HashSet::<(usize,usize)>::new(); // Pairs (seq_id, seq_pos)
-        for (query_pos, kmer) in query.windows(self.k).enumerate(){
-            for (target_id, target_pos) in self.lookup_kmer(kmer){
-                
-                let align_start = target_pos as isize - query_pos as isize;
-                if align_start >= 0 && (align_start + query.len() as isize) <= self.seq_storage.get(target_id).seq.len() as isize{
-                    // Is within bounds
-                    align_starts.insert((target_id, align_start as usize));
+        assert!(query.len() >= self.k);
+        let mut align_starts = Vec::<(usize,usize)>::new(); // Pairs (seq_id, seq_pos)
+        let mut minimizer_positions = Vec::<usize>::new();
+        get_minimizer_positions(query, &mut minimizer_positions, self.k, self.m);
+        for minmer_start in minimizer_positions {
+            let ascii_minmer = &query[minmer_start..minmer_start+self.m];
+            let bitpacked_minmer = bitpack_ascii(ascii_minmer);
+            if let Some(minmer) = bitpacked_minmer {
+                if let Some(bucket) = self.mphf.try_hash(&minmer){
+                    let bucket_range = self.bucket_starts[bucket as usize]..self.bucket_starts[bucket as usize + 1];
+                    for &(seq_id, seq_pos) in self.locations[bucket_range].iter(){
+                        let seq = self.seq_storage.get(seq_id as usize).seq;
+                        if &seq[seq_pos as usize .. seq_pos as usize + self.m] == ascii_minmer {
+                            // Minimizer exists in the MPHF. Todo: only need to check for the first element of the bucket.
+                            let start = seq_pos as isize - minmer_start as isize;
+                            let end = start + query.len() as isize; // One past the end
+                            if start >= 0 && end <= seq.len() as isize { // Query is within bounds if anchored here
+                                align_starts.push((seq_id as usize, seq_pos as usize - minmer_start))
+                            }
+                        }
+                    }
                 }
             }
         }
-        return align_starts.iter().map(|&(i,j)| (i,j)).collect();
+        align_starts.sort();
+        align_starts.dedup();
+        align_starts
     }
 
     pub fn new(db: &'a SeqDB, k: usize, m: usize) -> Self{
