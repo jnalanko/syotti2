@@ -169,8 +169,9 @@ impl<'a> MinimizerIndex<'a>{
     // Looks up all minimizers of the query and returns all places where an exact
     // alignment could start so that the query aligns with one of its minimizers. 
     // returns pairs (i,j) such that seq might be found in sequence i starting from position j
-    // As long as the sequence has length at least k, all exact matches to the query are
-    // guaranteed to be within the candidate set.
+    // If the query has an exact match of length k to some place in the index, and the query
+    // can be aligned there (does not go out of bounds of the target), then the set of candidates
+    // is guaranteed to contain that location.
     pub fn get_exact_alignment_candidates(&self, query: &[u8]) -> Vec<(usize,usize)>{
         assert!(query.len() >= self.k);
         let mut align_starts = Vec::<(usize,usize)>::new(); // Pairs (seq_id, seq_pos)
