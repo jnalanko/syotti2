@@ -12,7 +12,10 @@ fn update_coverage(coverages: &Vec<Vec<AtomicU32>>, mismatches: &Vec<Vec<AtomicU
         let distance = syotti2::hamming_distance_not_matching_N(bait, target);
         if distance <= hamming_distance{
             for i in 0..bait.len(){
+                // Relaxed atomic ordering is okay for addition because addition is commutative
                 coverages[target_id][target_start + i].fetch_add(1, Relaxed); // TODO: this may overflow: is there a saturating add?
+
+                // Relaxed atomic ordering is okay for min because min is commutative
                 mismatches[target_id][target_start + i].fetch_min(distance as u32, Relaxed);
             }
         }
