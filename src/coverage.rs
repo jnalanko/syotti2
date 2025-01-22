@@ -1,9 +1,10 @@
 use jseqio::reverse_complement;
 use jseqio::seq_db::SeqDB;
-use std::io::{BufWriter, Write};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use std::{io::{BufWriter, Write}, sync::atomic::{AtomicI16, AtomicU32, Ordering::Relaxed}};
 use crate::minimizer_index::MinimizerIndex;
 
-fn update_coverage(coverages: &mut Vec<Vec<u32>>, mismatches: &mut Vec<Vec<u32>>, bait: &[u8], index: &MinimizerIndex, targets_db: &SeqDB, hamming_distance: usize){
+fn update_coverage(coverages: &Vec<Vec<AtomicU32>>, mismatches: &Vec<Vec<AtomicU32>>, bait: &[u8], index: &MinimizerIndex, targets_db: &SeqDB, hamming_distance: usize){
     let candidates = index.get_exact_alignment_candidates(bait);
 
     for (target_id, target_start) in candidates{
@@ -11,9 +12,8 @@ fn update_coverage(coverages: &mut Vec<Vec<u32>>, mismatches: &mut Vec<Vec<u32>>
         let distance = syotti2::hamming_distance_not_matching_N(bait, target);
         if distance <= hamming_distance{
             for i in 0..bait.len(){
-                // Add 1 to the coverage using saturating add so we don't overflow
-                coverages[target_id][target_start + i] = coverages[target_id][target_start + i].saturating_add(1);
-                mismatches[target_id][target_start + i] = std::cmp::min(mismatches[target_id][target_start + i], distance as u32);
+                coverages[target_id][target_start + i].fetch_add(1, Relaxed); // TODO: this may overflow: is there a saturating add?
+                mismatches[target_id][target_start + i].fetch_min(distance as u32, Relaxed);
             }
         }
     }
@@ -89,29 +89,46 @@ pub fn write_as_png<T: Into<f64> + Clone>(coverages: Vec<Vec<T>>, out: &mut impl
 
 // Note: searches both forward and reverse complement. This means that if a bait overlaps with its own
 // reverse complement, it could contribute 2 to the coverage depth at the overlapping positions.
-pub fn compute_coverage(targets_db: &SeqDB, bait_db: &SeqDB, d: usize, g: usize, m: usize) -> (Vec<Vec<u32>>, Vec<Vec<u32>>){
-
-    type IntType = u32; // 32 bits ought to be enough for anyone
+pub fn compute_coverage(targets_db: &SeqDB, bait_db: &SeqDB, d: usize, g: usize, m: usize, n_threads: usize) -> (Vec<Vec<u32>>, Vec<Vec<u32>>){
 
     let index = MinimizerIndex::new(&targets_db, g, m);
 
     // Initialize coverage depth vectors
     // coverages[i][j] = depth in target i at position j
-    let mut coverages = Vec::<Vec::<IntType>>::new(); 
-    let mut mismatches = Vec::<Vec::<IntType>>::new();
+    let mut coverages = Vec::<Vec::<AtomicU32>>::new();  // Let's hope 32 bits are enough
+    let mut mismatches = Vec::<Vec::<AtomicU32>>::new(); // Let's hope 32 bits are enough
     for i in 0..targets_db.sequence_count(){
-        coverages.push(vec![0; targets_db.get(i).seq.len()]);
-        mismatches.push(vec![IntType::MAX; targets_db.get(i).seq.len()]);
+        let len = targets_db.get(i).seq.len();
+        let mut cov = Vec::<AtomicU32>::with_capacity(len);
+        let mut mis = Vec::<AtomicU32>::with_capacity(len);
+        for _ in 0..len {
+            cov.push(AtomicU32::new(0));
+            mis.push(AtomicU32::new(u32::MAX));
+        }
+        coverages.push(cov);
+        mismatches.push(mis);
     }
 
     let progress = indicatif::ProgressBar::new(bait_db.sequence_count() as u64);
-    for bait in bait_db.iter() {
-        progress.inc(1);
-        update_coverage(&mut coverages, &mut mismatches, bait.seq, &index, targets_db, d);
-        update_coverage(&mut coverages, &mut mismatches, reverse_complement(bait.seq).as_slice(), &index, targets_db, d);
-    }
 
-    (coverages, mismatches)
+    let thread_pool = rayon::ThreadPoolBuilder::new().num_threads(n_threads).build().unwrap();
+    thread_pool.install(|| {
+        (0..bait_db.sequence_count()).into_par_iter().for_each(|i| {
+            let bait = bait_db.get(i);
+            update_coverage(&coverages, &mismatches, bait.seq, &index, targets_db, d);
+            update_coverage(&coverages, &mismatches, reverse_complement(bait.seq).as_slice(), &index, targets_db, d);
+            progress.inc(1);
+        });
+    });
+
+    log::info!("Converting to non-atomic integers");
+
+    // TODO: does this make copies and have 2x memory overhead?
+    let non_atomic_coverages = coverages.into_iter().map(|v| v.into_iter().map(|x| x.into_inner()).collect()).collect();
+    let non_atomic_mismatches = mismatches.into_iter().map(|v| v.into_iter().map(|x| x.into_inner()).collect()).collect();
+
+    log::info!("Coverage computation finished");
+    (non_atomic_coverages, non_atomic_mismatches)
 
 }
 
@@ -201,7 +218,7 @@ mod tests{
 
         let answer = vec![t0_answer, t1_answer, t2_answer];
 
-        let (coverages, _) = compute_coverage(&target_db, &bait_db,  1, 5, 3);
+        let (coverages, _) = compute_coverage(&target_db, &bait_db,  1, 5, 3, 10);
 
         assert_eq!(answer, coverages);
     }

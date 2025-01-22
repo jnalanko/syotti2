@@ -256,7 +256,7 @@ fn main() {
             let bait_db = DynamicFastXReader::from_file(&baitfile).unwrap().into_db().unwrap(); // TODO: print info log
             let targets_db = DynamicFastXReader::from_file(&targetfile).unwrap().into_db().unwrap();
         
-            let (coverages, mismatches) = compute_coverage(&targets_db, &bait_db, d, g, m);
+            let (coverages, mismatches) = compute_coverage(&targets_db, &bait_db, d, g, m, n_threads);
 
             coverage::write_as_csv(&coverages, &mut out, |x| format!("{}", x));
 
