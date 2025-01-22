@@ -126,19 +126,10 @@ impl<'a> MinimizerIndex<'a>{
     // position of the minmer in the k-mer.
     // The inputs must be so that kmer[minmer_start..minmer_start+m] = minmer
     // Returns pairs (seq_id, pos)
-    pub fn lookup_kmer_given_minmer(&self, kmer: &[u8], minmer: &[u8], minmer_start: usize) -> Vec<(usize, usize)> {
-        let minmer = match Kmer::from_ascii(minmer){
-            Err(KmerEncodingError::InvalidNucleotide(_)) => {return vec![]}, // No matches
-            Err(KmerEncodingError::TooLong(len)) => {panic!("Sequence length {} shorter than k", len)},
-            Ok(x) => x
-        };
-
+    pub fn lookup_kmer_given_minmer(&self, kmer: &[u8], ascii_minmer: &[u8], minmer_start: usize) -> Vec<(usize, usize)> {
         let mut ans: Vec<(usize,usize)> = vec![];
-
-        if let Some(bucket) = self.mphf.try_hash(&minmer){
-            let bucket_range = self.bucket_starts[bucket as usize]..self.bucket_starts[bucket as usize + 1];
-            for (seq_id, seq_pos) in self.locations[bucket_range].iter(){
-                
+        if let Some(bucket) = self.lookup_bucket(&ascii_minmer){
+            for (seq_id, seq_pos) in bucket {
                 // Start of the k-mer that contains this minimizer occurrence:
                 let start = *seq_pos as i64 - minmer_start as i64;
 
