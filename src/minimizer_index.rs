@@ -166,6 +166,25 @@ impl<'a> MinimizerIndex<'a>{
         self.lookup_kmer_given_minmer(kmer, minimizer, min_pos)
     }
 
+    pub fn lookup_bucket(&self, ascii_minmer: &[u8]) -> Option<&[(u32, u32)]> {
+        let minmer = bitpack_ascii(ascii_minmer);
+        if minmer.is_none() { return None; }; // Invalid nucleotides?
+        let minmer = minmer.unwrap();
+        if let Some(bucket) = self.mphf.try_hash(&minmer){
+            // Check the first element of the bucket to see if the MPHF 
+            // pointed us to a bucket corresponding to the minmer we have.
+            let bucket_range = self.bucket_starts[bucket as usize]..self.bucket_starts[bucket as usize + 1];
+            if bucket_range.is_empty() { return None; } // I'm not sure if this can actually happen
+            let (seq_id, seq_pos) = self.locations[bucket_range.start];
+            let seq = self.seq_storage.get(seq_id as usize).seq;
+            if &seq[seq_pos as usize .. seq_pos as usize + self.m] == ascii_minmer {
+                // We actually have this minmer
+                return Some(&self.locations[bucket_range])
+            }
+        }
+        None
+    }
+
     // Looks up all minimizers of the query and returns all places where an exact
     // alignment could start so that the query aligns with one of its minimizers. 
     // returns pairs (i,j) such that seq might be found in sequence i starting from position j
@@ -179,19 +198,15 @@ impl<'a> MinimizerIndex<'a>{
         get_minimizer_positions(query, &mut minimizer_positions, self.k, self.m);
         for minmer_start in minimizer_positions {
             let ascii_minmer = &query[minmer_start..minmer_start+self.m];
-            let bitpacked_minmer = bitpack_ascii(ascii_minmer);
-            if let Some(minmer) = bitpacked_minmer {
-                if let Some(bucket) = self.mphf.try_hash(&minmer){
-                    let bucket_range = self.bucket_starts[bucket as usize]..self.bucket_starts[bucket as usize + 1];
-                    for &(seq_id, seq_pos) in self.locations[bucket_range].iter(){
-                        let seq = self.seq_storage.get(seq_id as usize).seq;
-                        if &seq[seq_pos as usize .. seq_pos as usize + self.m] == ascii_minmer {
-                            // Minimizer exists in the MPHF. Todo: only need to check for the first element of the bucket.
-                            let start = seq_pos as isize - minmer_start as isize;
-                            let end = start + query.len() as isize; // One past the end
-                            if start >= 0 && end <= seq.len() as isize { // Query is within bounds if anchored here
-                                align_starts.push((seq_id as usize, seq_pos as usize - minmer_start))
-                            }
+            let bucket = self.lookup_bucket(ascii_minmer);
+            if let Some(bucket) = bucket {
+                for &(seq_id, seq_pos) in bucket {
+                    let seq = self.seq_storage.get(seq_id as usize).seq;
+                    if &seq[seq_pos as usize .. seq_pos as usize + self.m] == ascii_minmer {
+                        let start = seq_pos as isize - minmer_start as isize;
+                        let end = start + query.len() as isize; // One past the end
+                        if start >= 0 && end <= seq.len() as isize { // Query is within bounds if anchored here
+                            align_starts.push((seq_id as usize, seq_pos as usize - minmer_start))
                         }
                     }
                 }
