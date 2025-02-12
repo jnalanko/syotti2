@@ -37,16 +37,21 @@ pub fn write_as_csv<T: std::fmt::Display, F: Fn(&T) -> String>(lines: &Vec<Vec<T
 }
 
 // T is Generic over any type that is convertible to f64
-pub fn write_as_png<T: Into<f64> + Clone>(coverages: Vec<Vec<T>>, out: &mut impl Write){
+pub fn write_as_png<T: Into<f64> + Clone>(coverages: Vec<Vec<T>>, color_scale: Option<usize>, out: &mut impl Write){
     let max_len = coverages.iter().map(|x| x.len()).max().unwrap();
-    let mut max_coverage = 0.0;
-    for v in coverages.iter() {
-        for x in v.iter(){
-            let val: f64 = x.clone().into();
-            max_coverage = f64::max(max_coverage, val);
+    let max_coverage = match color_scale {
+        Some(s) => s as f64,
+        None => {
+            let mut max_cov = 0.0;
+            for v in coverages.iter() {
+                for x in v.iter(){
+                    let val: f64 = x.clone().into();
+                    max_cov = f64::max(max_cov, val);
+                }
+            }
+            max_cov
         }
-    }
-
+    };
 
     let width = max_len;
     let height = coverages.len();
@@ -56,9 +61,9 @@ pub fn write_as_png<T: Into<f64> + Clone>(coverages: Vec<Vec<T>>, out: &mut impl
     encoder.set_depth(png::BitDepth::Eight);
 
     let mut pixels = vec![0_u8; width*height*3]; // Three color components per pixel
-    let coverage_floor = 0.1; // This will be zero brightness. Coverages below this are shown in red.
-    let log_max = f64::ln(max_coverage as f64); // This will be fully white
-    let brigtness_scaling_factor = 255.0_f64 / log_max; // log_max * c = 255
+    let red_threshold = 0.0; // Coverage at or below this are drawn in red.
+    //let log_max = f64::ln(max_coverage as f64); // This will be fully white
+    let brigtness_scaling_factor = 255.0_f64 / max_coverage; // max_coverage * c = 255
 
     for (row, v) in coverages.iter().enumerate() {
         for (col, x) in v.iter().enumerate(){
@@ -67,15 +72,18 @@ pub fn write_as_png<T: Into<f64> + Clone>(coverages: Vec<Vec<T>>, out: &mut impl
                 pixels[row*width*3 + col*3] = 251; // Red
                 pixels[row*width*3 + col*3 + 1] = 255; // Green
                 pixels[row*width*3 + col*3 + 2] = 43; // Blue
-            } else if x < coverage_floor {
+            } else if x <= red_threshold {
                 pixels[row*width*3 + col*3] = 255; // Red
                 pixels[row*width*3 + col*3 + 1] = 0; // Green
                 pixels[row*width*3 + col*3 + 2] = 0; // Blue
             } else {
-                let mut val = f64::ln(x / coverage_floor); // Now this should be >= 0
-                val = f64::max(val, 0.0); // Clamp to zero in case of floating point inaccuracies which could make val slightly negative
-                val *= brigtness_scaling_factor; // Now the brightest pixel should have val = 255
-                let brightness = f64::min(val, 255.0) as u8; // Again clamp in case of floating point weirdness
+                let brightness = f64::min(x, max_coverage) * brigtness_scaling_factor;
+                assert!(brightness.round() <= 255.0);
+                let brightness: u8 = brightness.round() as u8;
+                //let mut val = f64::ln(x / coverage_floor); // Now this should be >= 0
+                //val = f64::max(val, 0.0); // Clamp to zero in case of floating point inaccuracies which could make val slightly negative
+                //val *= brigtness_scaling_factor; // Now the brightest pixel should have val = 255
+                //let brightness = f64::min(val, 255.0) as u8; // Again clamp in case of floating point weirdness
 
                 pixels[row*width*3 + col*3] = brightness; // Red
                 pixels[row*width*3 + col*3 + 1] = brightness; // Green

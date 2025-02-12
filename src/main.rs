@@ -43,10 +43,10 @@ fn pad_to_equal_length<T: Copy>(v: &mut Vec<Vec<T>>, pad_element: T) {
     }
 }
 
-fn write_picture<T: Into<f64> + Copy + Clone>(mut coverages: Vec<Vec<T>>, pad_element: T, image_outpath: &std::path::Path) {
+fn write_picture<T: Into<f64> + Copy + Clone>(mut coverages: Vec<Vec<T>>, pad_element: T, color_scale: Option<usize>, image_outpath: &std::path::Path) {
     pad_to_equal_length(&mut coverages, pad_element);
     let mut image_out = std::fs::File::create(image_outpath).unwrap();
-    coverage::write_as_png(coverages, &mut image_out);
+    coverage::write_as_png(coverages, color_scale, &mut image_out);
 }
 
 fn main() {
@@ -202,6 +202,11 @@ fn main() {
                 .long("resolution")
                 .value_parser(clap::value_parser!(usize))
             )        
+            .arg(Arg::new("color-scale")
+                .help("Sets the color mapping so that coverage of 'color-scale' and above map to maximum brightness. If not given, then the maximum coverage in the data is set to maximum brightness.")
+                .long("color-scale")
+                .value_parser(clap::value_parser!(usize))
+            )        
             .arg(Arg::new("variable-resolution")
                 .help("Relevant if --resolution is given. In enabled, makes it so that the resolution of each coverage vector is proportional to its length, such that the longest target has resolution equal to the value passed to --resolution. This is especially useful with --coverage-out-picture for better visualization.")
                 .long("variable-resolution")
@@ -283,6 +288,7 @@ fn main() {
             let resolution = sub_matches.get_one::<usize>("resolution");
             let variable_resolution = sub_matches.get_flag("variable-resolution");
             let concat_rows = sub_matches.get_one::<usize>("concat-into-rows");
+            let color_scale = sub_matches.get_one::<usize>("color-scale").copied();
 
             log::info!("Loading coverage values from {}", infile.display());
             let mut coverages = load_coverages(infile);
@@ -296,12 +302,12 @@ fn main() {
                 log::info!("Smoothing coverage into {} points per row", reso);
                 let cov_averages = coverage::into_resolution(coverages, *reso, variable_resolution);
                 log::info!("Building the picture");
-                write_picture(cov_averages, -1.0, outfile);
+                write_picture(cov_averages, -1.0, color_scale, outfile);
             } else { // Write coverages as-is without smoothing to resolution
                 // Reinterpert as i32 to be able to use -1 as a padding value:
                 let icoverages: Vec<Vec<i32>> = coverages.into_iter().map(|v| v.into_iter().map(|x| i32::try_from(x).unwrap()).collect()).collect();
                 log::info!("Building the picture");
-                write_picture(icoverages, -1, outfile);
+                write_picture(icoverages, -1, color_scale, outfile);
             }
         }
         _ => {
