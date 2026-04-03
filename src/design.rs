@@ -72,7 +72,15 @@ pub fn run_algorithm(db: &SeqDB, index: &MinimizerIndex, bait_len: usize, hammin
 mod tests{
 
     use super::*;
-    
+
+    #[test]
+    fn test_reverse_complement(){
+        // C++ test: get_rc("ATGNAC") == "GTNCAT" (reverse complement of N is N)
+        let s = b"ATGNAC";
+        let rc = jseqio::reverse_complement(s);
+        assert_eq!(rc, b"GTNCAT");
+    }
+
     #[allow(non_snake_case)]
     #[test]
     fn test_hamming_distance_not_matching_N(){
