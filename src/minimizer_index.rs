@@ -524,6 +524,75 @@ mod tests{
     }
 
     #[test]
+    fn test_reference_with_n(){
+        // k-mers in the reference that span an N position should not be indexed.
+        // k-mers in pure-ACGT regions on either side of the N should still be found normally.
+        let mut db = SeqDB::new();
+        // "ACGT" appears at positions 0 and 5 (after the N)
+        // k-mers at positions 1-4 all span the N and must not be indexed
+        db.push_record(RefRecord{head: b"", seq: b"ACGTNACGT", qual: None});
+
+        let k = 4;
+        let m = 2;
+        let index = MinimizerIndex::new(&db, k, m);
+
+        let mut occs = index.lookup_kmer(b"ACGT");
+        occs.sort();
+        assert_eq!(occs, vec![(0, 0), (0, 5)]);
+
+        // "CGTA" would be the k-mer connecting the two ACGT islands if the N weren't there,
+        // but it doesn't exist in the sequence
+        assert_eq!(index.lookup_kmer(b"CGTA"), vec![]);
+    }
+
+    #[test]
+    fn test_exact_alignment_candidates_longer_than_sequence(){
+        // A query longer than the sequence cannot produce any valid alignment candidates,
+        // since the alignment would always extend past the end.
+        let mut db = SeqDB::new();
+        db.push_record(RefRecord{head: b"", seq: b"ACGT", qual: None}); // length 4
+
+        let k = 4;
+        let m = 2;
+        let index = MinimizerIndex::new(&db, k, m);
+
+        assert_eq!(index.get_exact_alignment_candidates(b"ACGTACGT"), vec![]); // length 8
+    }
+
+    #[test]
+    fn test_k_equals_m(){
+        // When k == m, every k-mer is its own minimizer.
+        let mut db = SeqDB::new();
+        db.push_record(RefRecord{head: b"", seq: b"ACGTACGT", qual: None});
+
+        let k = 4;
+        let m = 4;
+        let index = MinimizerIndex::new(&db, k, m);
+
+        let mut occs = index.lookup_kmer(b"ACGT");
+        occs.sort();
+        assert_eq!(occs, vec![(0, 0), (0, 4)]);
+        assert_eq!(index.lookup_kmer(b"CGTA"), vec![(0, 1)]);
+        assert_eq!(index.lookup_kmer(b"GTAC"), vec![(0, 2)]);
+        assert_eq!(index.lookup_kmer(b"TACG"), vec![(0, 3)]);
+        assert_eq!(index.lookup_kmer(b"TTTT"), vec![]);
+    }
+
+    #[test]
+    fn test_sequence_of_length_k(){
+        // A sequence of exactly length k has only one k-mer, at position 0.
+        let mut db = SeqDB::new();
+        db.push_record(RefRecord{head: b"", seq: b"ACGT", qual: None});
+
+        let k = 4;
+        let m = 2;
+        let index = MinimizerIndex::new(&db, k, m);
+
+        assert_eq!(index.lookup_kmer(b"ACGT"), vec![(0, 0)]);
+        assert_eq!(index.lookup_kmer(b"CGTA"), vec![]);
+    }
+
+    #[test]
     fn test_n_handling(){
         // A query k-mer containing N should never be found in the index,
         // even if the non-N positions would otherwise match a sequence in the index.
