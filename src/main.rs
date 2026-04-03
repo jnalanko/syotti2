@@ -126,6 +126,11 @@ fn main() {
                 .long("randomize")
                 .action(ArgAction::SetTrue)
             )
+            .arg(Arg::new("require-cutoff-for-every-sequence")
+                .help("Stop only when every input sequence has reached the coverage cutoff individually")
+                .long("require-cutoff-for-every-sequence")
+                .action(ArgAction::SetTrue)
+            )
         )
     .subcommand(Command::new("coverage")
         .arg_required_else_help(true)
@@ -230,22 +235,23 @@ fn main() {
             let m: usize = *sub_matches.get_one("minimizer-len").unwrap();
             let cutoff: f64 = *sub_matches.get_one("cutoff").unwrap();
             let randomize: bool = sub_matches.get_flag("randomize");
+            let require_cutoff_for_every_sequence: bool = sub_matches.get_flag("require-cutoff-for-every-sequence");
 
             if randomize { // TODO
                 std::unimplemented!("Randomization not implemented yet");
             }
-        
+
             let reader = DynamicFastXReader::from_file(infile).unwrap();
-            let mut writer = std::io::BufWriter::new(std::fs::File::create(outfile).unwrap()); // Let's open this right away to crash early if there's a problem            
+            let mut writer = std::io::BufWriter::new(std::fs::File::create(outfile).unwrap()); // Let's open this right away to crash early if there's a problem
 
             info!("Reading sequences from {}", infile.display());
             let seq_db = Box::new(reader.into_db().unwrap());
-        
+
             info!("Indexing the sequences"); // TODO: move to inside design
             let index = minimizer_index::MinimizerIndex::new(&seq_db, g, m);
-        
+
             info!("Designing baits");
-            design::run_algorithm(&seq_db, &index, L, d, cutoff, &mut writer);
+            design::run_algorithm(&seq_db, &index, L, d, cutoff, require_cutoff_for_every_sequence, &mut writer);
         }
         Some(("coverage", sub_matches)) => {
             let targetfile: &PathBuf = sub_matches.get_one("targets").unwrap();
