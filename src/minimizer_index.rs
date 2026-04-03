@@ -523,5 +523,21 @@ mod tests{
         
     }
 
-    // TODO: test handling Ns
+    #[test]
+    fn test_n_handling(){
+        // A query k-mer containing N should never be found in the index,
+        // even if the non-N positions would otherwise match a sequence in the index.
+        let mut db = SeqDB::new();
+        db.push_record(RefRecord{head: b"seq1", seq: b"ATAGCTAGTCGATGCTGATCGTAGGTTCGTAGCTGTATGCTGACCCTGATGTCTGTAGTCGTGACTGACT", qual: None});
+
+        let k = 20;
+        let m = 5;
+        let index = MinimizerIndex::new(&db, k, m);
+
+        // All-N k-mer
+        assert_eq!(index.lookup_kmer(b"NNNNNNNNNNNNNNNNNNNN"), vec![]);
+
+        // N in the middle with ACGT on both sides
+        assert_eq!(index.lookup_kmer(b"ACACACTGANACGTTGANGC"), vec![]);
+    }
 }
