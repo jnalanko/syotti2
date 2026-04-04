@@ -294,11 +294,11 @@ mod tests{
 
         let mut db = SeqDB::new();
 
-        //                                                                   ********
-        //                                                ********    ********
+        //                                                                   ********    ********
+        //                                                ********    ********                 ********
         //                                              01234567890123456789012345678
         db.push_record(jseqio::record::RefRecord{seq: b"ACGTATTCGTGATTCTGTAGTCAGCGTAC", head: b"", qual: None});
-        //db.push_record(jseqio::record::RefRecord{seq: b"ACGTATTCGTGATTCTGTAGTCAGCGTCAAATTTCTGTATGCTAGCA", head: b"", qual: None}); // 12 C's
+        db.push_record(jseqio::record::RefRecord{seq: b"ACGTATTCGTGATTCTGTAGTCAGCGTACAAATTCTGTATGCTAGCA", head: b"", qual: None}); // 12 C's
 
         let index = MinimizerIndex::new(&db, g, 1);
         let mut fasta_out = Vec::<u8>::new();
@@ -307,7 +307,7 @@ mod tests{
         let bait_db = jseqio::reader::DynamicFastXReader::new(std::io::Cursor::new(fasta_out)).unwrap().into_db().unwrap();
         let baits = bait_db.iter().map(|r| r.seq).collect::<Vec<&[u8]>>();
 
-        assert_eq!(baits, vec![b"GTATTCGT" as &[u8], b"CTGTAGTC", b"CAGCGTAC"]);
+        assert_eq!(baits, vec![b"GTATTCGT" as &[u8], b"CTGTAGTC", b"CAGCGTAC", b"TCTGTATG", b"TGCTAGCA"]);
     }
 
     #[test]
