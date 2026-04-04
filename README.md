@@ -45,11 +45,13 @@ Options:
   -g, --seed-len <seed-len>
           Length of seeds in matching [default: 20]
   -m, --minimizer-len <minimizer-len>
-          Length of minimizers in indexing. Must be less or equal to seed-len [default: 12]
+          Length of minimizers in indexing. Must be less or equal to seed-len [default: 14]
   -c, --cutoff <cutoff>
           Stop the algorithm when this coverage fraction is reached [default: 1.0]
   -r, --randomize
           Randomize the processing order in the greedy algorithm
+      --require-cutoff-for-every-sequence
+          Stop only when every input sequence has reached the coverage cutoff individually
   -h, --help
           Print help
 ```
@@ -71,7 +73,7 @@ Options:
   -g, --seed-len <seed-len>
           Length of seeds in matching [default: 20]
   -m, --minimizer-len <minimizer-len>
-          Length of minimizers in indexing. Must be less or equal to seed-len [default: 12]
+          Length of minimizers in indexing. Must be less or equal to seed-len [default: 14]
   -o, --coverage-out <coverage-out>
           Output csv file for the coverage data.
       --mismatch-out <mismatch-out>
