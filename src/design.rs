@@ -2,18 +2,30 @@ use jseqio::seq_db::SeqDB;
 use log::info;
 use crate::minimizer_index::MinimizerIndex;
 
+struct CoverageState {
+    cover_marks: Vec<Vec<bool>>,
+    n_covered_by_seq: Vec<usize>,
+    cutoff_reached_by_seq: Vec<bool>,
+    n_seqs_with_cutoff_reached: usize,
+    cutoff: f64,
+}
 
-// Returns the number of new bases covered, and updates per-sequence coverage counts.
-fn mark_all_that_are_covered_by(bait: &[u8], cover_marks: &mut Vec<Vec<bool>>, n_covered_by_seq: &mut Vec<usize>, index: &MinimizerIndex, db: &SeqDB, hamming_distance: usize) -> usize{
+// Returns the number of new bases covered, and updates all coverage state including per-sequence cutoff tracking.
+fn mark_all_that_are_covered_by(bait: &[u8], cov: &mut CoverageState, index: &MinimizerIndex, db: &SeqDB, hamming_distance: usize) -> usize{
     let align_starts = index.get_exact_alignment_candidates(bait);
     let mut new_covered_bases = 0_usize;
     for (seq_id, seq_pos) in align_starts{
-        if syotti2::hamming_distance_not_matching_N(bait, &db.get(seq_id).seq[seq_pos..seq_pos+bait.len()]) <= hamming_distance{
-            for i in seq_pos..seq_pos+bait.len(){
-                if !cover_marks[seq_id][i] {
+        if syotti2::hamming_distance_not_matching_N(bait, &db.get(seq_id).seq[seq_pos..seq_pos+bait.len()]) <= hamming_distance {
+            for i in seq_pos..seq_pos+bait.len() {
+                if !cov.cover_marks[seq_id][i] {
                     new_covered_bases += 1;
-                    n_covered_by_seq[seq_id] += 1;
-                    cover_marks[seq_id][i] = true; // This is within bounds because it was checked above
+                    cov.n_covered_by_seq[seq_id] += 1;
+                    cov.cover_marks[seq_id][i] = true;
+                    let length_threshold = (db.get(seq_id).seq.len() as f64 * cov.cutoff).ceil() as usize;
+                    if !cov.cutoff_reached_by_seq[seq_id] && cov.n_covered_by_seq[seq_id] >= length_threshold {
+                        cov.cutoff_reached_by_seq[seq_id] = true;
+                        cov.n_seqs_with_cutoff_reached += 1;
+                    }
                 }
             }
         }
@@ -25,25 +37,31 @@ fn mark_all_that_are_covered_by(bait: &[u8], cover_marks: &mut Vec<Vec<bool>>, n
 pub fn run_algorithm(db: &SeqDB, index: &MinimizerIndex, bait_len: usize, hamming_distance: usize, cutoff: f64, require_cutoff_for_every_sequence: bool, fasta_out: &mut impl std::io::Write){
 
     // Initialize the cover marks to falses. False means not covered.
+    let mut total_seq_len = 0_usize;
     let mut cover_marks = Vec::<Vec::<bool>>::new();
     let mut n_covered_by_seq = Vec::<usize>::new();
-    let mut total_seq_len = 0_usize;
     for rec in db.iter(){
         cover_marks.push(vec![false; rec.seq.len()]);
         n_covered_by_seq.push(0);
         total_seq_len += rec.seq.len();
     }
 
+    let mut cov = CoverageState {
+        cover_marks,
+        n_covered_by_seq,
+        cutoff_reached_by_seq: vec![false; db.sequence_count()],
+        n_seqs_with_cutoff_reached: 0,
+        cutoff,
+    };
+
     let mut total_covered = 0_usize;
-    let mut n_seqs_with_cutoff_reached = 0_usize;
-    let mut cutoff_reached_by_seq = vec![false; db.sequence_count()];
 
     let mut n_baits = 0_usize;
-    'outer: for (seq_id, rec) in db.iter().enumerate(){
+    for (seq_id, rec) in db.iter().enumerate(){
         let mut prev_end = 0_usize;
 
         // Find first position in cover marks that is not yet covered
-        while let Some(bait_start) = cover_marks[seq_id][prev_end..].iter().position(|b| !*b){
+        while let Some(bait_start) = cov.cover_marks[seq_id][prev_end..].iter().position(|b| !*b){
             let mut bait_start = prev_end + bait_start;
             let mut bait_end = bait_start + bait_len;
             if bait_end > rec.seq.len(){
@@ -56,16 +74,8 @@ pub fn run_algorithm(db: &SeqDB, index: &MinimizerIndex, bait_len: usize, hammin
                 bait_end -= excess;
             }
             let bait = &rec.seq[bait_start..bait_end];
-            total_covered += mark_all_that_are_covered_by(bait, &mut cover_marks, &mut n_covered_by_seq, index, db, hamming_distance);
-            total_covered += mark_all_that_are_covered_by(&jseqio::reverse_complement(bait), &mut cover_marks, &mut n_covered_by_seq, index, db, hamming_distance);
-
-            // Update per-sequence cutoff tracking
-            for i in 0..db.sequence_count() {
-                if !cutoff_reached_by_seq[i] && n_covered_by_seq[i] as f64 >= db.get(i).seq.len() as f64 * cutoff {
-                    cutoff_reached_by_seq[i] = true;
-                    n_seqs_with_cutoff_reached += 1;
-                }
-            }
+            total_covered += mark_all_that_are_covered_by(bait, &mut cov, index, db, hamming_distance);
+            total_covered += mark_all_that_are_covered_by(&jseqio::reverse_complement(bait), &mut cov, index, db, hamming_distance);
 
             n_baits += 1;
             prev_end = bait_end;
@@ -75,19 +85,21 @@ pub fn run_algorithm(db: &SeqDB, index: &MinimizerIndex, bait_len: usize, hammin
             fasta_out.write_all(b"\n").unwrap();
 
             let cutoff_reached = if require_cutoff_for_every_sequence {
-                n_seqs_with_cutoff_reached == db.sequence_count()
+                cov.n_seqs_with_cutoff_reached == db.sequence_count()
             } else {
                 (total_covered as f64) / (total_seq_len as f64) >= cutoff
             };
 
             if cutoff_reached {
                 info!("Reached coverage cutoff of {}% at {} baits", cutoff*100.0, n_baits);
-                break 'outer;
+                info!("Selected {} baits", n_baits);
+                return;
             }
         }
     }
-
-    info!("Selected {} baits", n_baits);
+    
+    // All sequences have been processed, so coverage must be 100%.
+    panic!("This part of the code should never be reached");
 }
 
 #[cfg(test)]
