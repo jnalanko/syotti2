@@ -32,6 +32,25 @@ fn find_bait_start(from: usize, seq_len: usize, cover_marks: &[bool], bait_len: 
     Some(p.min(seq_len - bait_len))
 }
 
+// Marks positions [mark_start, mark_end) in seq_id as covered, updating all coverage state.
+// Returns the number of newly covered bases.
+fn mark_range(seq_id: usize, mark_start: usize, mark_end: usize, seq_len: usize, cov: &mut CoverageState) -> usize {
+    let mut new_covered_bases = 0_usize;
+    let length_threshold = (seq_len as f64 * cov.cutoff).ceil() as usize;
+    for i in mark_start..mark_end {
+        if !cov.cover_marks[seq_id][i] {
+            new_covered_bases += 1;
+            cov.n_covered_by_seq[seq_id] += 1;
+            cov.cover_marks[seq_id][i] = true;
+            if !cov.cutoff_reached_by_seq[seq_id] && cov.n_covered_by_seq[seq_id] >= length_threshold {
+                cov.cutoff_reached_by_seq[seq_id] = true;
+                cov.n_seqs_with_cutoff_reached += 1;
+            }
+        }
+    }
+    new_covered_bases
+}
+
 // Returns the number of new bases covered, and updates all coverage state including per-sequence cutoff tracking.
 fn mark_all_that_are_covered_by(bait: &[u8], cov: &mut CoverageState, index: &MinimizerIndex, db: &SeqDB, hamming_distance: usize, overhang: usize) -> usize{
     let align_starts = index.get_exact_alignment_candidates(bait);
@@ -41,18 +60,7 @@ fn mark_all_that_are_covered_by(bait: &[u8], cov: &mut CoverageState, index: &Mi
             let seq_len = db.get(seq_id).seq.len();
             let mark_start = seq_pos.saturating_sub(overhang);
             let mark_end = (seq_pos + bait.len() + overhang).min(seq_len);
-            for i in mark_start..mark_end {
-                if !cov.cover_marks[seq_id][i] {
-                    new_covered_bases += 1;
-                    cov.n_covered_by_seq[seq_id] += 1;
-                    cov.cover_marks[seq_id][i] = true;
-                    let length_threshold = (db.get(seq_id).seq.len() as f64 * cov.cutoff).ceil() as usize;
-                    if !cov.cutoff_reached_by_seq[seq_id] && cov.n_covered_by_seq[seq_id] >= length_threshold {
-                        cov.cutoff_reached_by_seq[seq_id] = true;
-                        cov.n_seqs_with_cutoff_reached += 1;
-                    }
-                }
-            }
+            new_covered_bases += mark_range(seq_id, mark_start, mark_end, seq_len, cov);
         }
     }
 
@@ -88,6 +96,13 @@ pub fn run_algorithm(db: &SeqDB, index: &MinimizerIndex, bait_len: usize, hammin
         while let Some(bait_start) = find_bait_start(prev_end, rec.seq.len(), &cov.cover_marks[seq_id], bait_len, overhang) {
             let bait_end = bait_start + bait_len;
             let bait = &rec.seq[bait_start..bait_end];
+
+            // Always mark the source region (plus overhang) as covered, even if the bait
+            // doesn't align back to itself (e.g. due to Ns not matching in the index).
+            let mark_start = bait_start.saturating_sub(overhang);
+            let mark_end = (bait_end + overhang).min(rec.seq.len());
+            total_covered += mark_range(seq_id, mark_start, mark_end, rec.seq.len(), &mut cov);
+
             total_covered += mark_all_that_are_covered_by(bait, &mut cov, index, db, hamming_distance, overhang);
             total_covered += mark_all_that_are_covered_by(&jseqio::reverse_complement(bait), &mut cov, index, db, hamming_distance, overhang);
 
