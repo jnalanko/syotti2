@@ -286,6 +286,31 @@ mod tests{
     }
 
     #[test]
+    fn test_overhang() {
+        let d = 0;
+        let g = 8;
+        let bait_length = 8;
+        let overhang = 2;
+
+        let mut db = SeqDB::new();
+
+        //                                                                   ********
+        //                                                ********    ********
+        //                                              01234567890123456789012345678
+        db.push_record(jseqio::record::RefRecord{seq: b"ACGTATTCGTGATTCTGTAGTCAGCGTAC", head: b"", qual: None});
+        //db.push_record(jseqio::record::RefRecord{seq: b"ACGTATTCGTGATTCTGTAGTCAGCGTCAAATTTCTGTATGCTAGCA", head: b"", qual: None}); // 12 C's
+
+        let index = MinimizerIndex::new(&db, g, 1);
+        let mut fasta_out = Vec::<u8>::new();
+        run_algorithm(&db, &index, bait_length, d, 1.0, false, overhang, &mut fasta_out);
+
+        let bait_db = jseqio::reader::DynamicFastXReader::new(std::io::Cursor::new(fasta_out)).unwrap().into_db().unwrap();
+        let baits = bait_db.iter().map(|r| r.seq).collect::<Vec<&[u8]>>();
+
+        assert_eq!(baits, vec![b"GTATTCGT" as &[u8], b"CTGTAGTC", b"CAGCGTAC"]);
+    }
+
+    #[test]
     fn test_require_cutoff_for_every_sequence(){
         // Two sequences with no sequence or RC similarity.
         // With cutoff=0.5 and the default (flag=false), covering seq1 fully satisfies
