@@ -4,19 +4,22 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::{io::{BufWriter, Write}, sync::atomic::{AtomicI16, AtomicU32, Ordering::Relaxed}};
 use crate::minimizer_index::MinimizerIndex;
 
-fn update_coverage(coverages: &Vec<Vec<AtomicU32>>, mismatches: &Vec<Vec<AtomicU32>>, bait: &[u8], index: &MinimizerIndex, targets_db: &SeqDB, hamming_distance: usize){
+fn update_coverage(coverages: &Vec<Vec<AtomicU32>>, mismatches: &Vec<Vec<AtomicU32>>, bait: &[u8], index: &MinimizerIndex, targets_db: &SeqDB, hamming_distance: usize, overhang: usize){
     let candidates = index.get_exact_alignment_candidates(bait);
 
     for (target_id, target_start) in candidates{
         let target = &targets_db.get(target_id).seq[target_start .. target_start + bait.len()];
         let distance = syotti2::hamming_distance_not_matching_N(bait, target);
         if distance <= hamming_distance{
-            for i in 0..bait.len(){
+            let seq_len = targets_db.get(target_id).seq.len();
+            let mark_start = target_start.saturating_sub(overhang);
+            let mark_end = (target_start + bait.len() + overhang).min(seq_len);
+            for i in mark_start..mark_end {
                 // Relaxed atomic ordering is okay for addition because addition is commutative
-                coverages[target_id][target_start + i].fetch_add(1, Relaxed); // TODO: this may overflow: is there a saturating add?
+                coverages[target_id][i].fetch_add(1, Relaxed); // TODO: this may overflow: is there a saturating add?
 
                 // Relaxed atomic ordering is okay for min because min is commutative
-                mismatches[target_id][target_start + i].fetch_min(distance as u32, Relaxed);
+                mismatches[target_id][i].fetch_min(distance as u32, Relaxed);
             }
         }
     }
@@ -100,7 +103,7 @@ pub fn write_as_png<T: Into<f64> + Clone>(coverages: Vec<Vec<T>>, color_scale: O
 
 // Note: searches both forward and reverse complement. This means that if a bait overlaps with its own
 // reverse complement, it could contribute 2 to the coverage depth at the overlapping positions.
-pub fn compute_coverage(targets_db: &SeqDB, bait_db: &SeqDB, d: usize, g: usize, m: usize, n_threads: usize) -> (Vec<Vec<u32>>, Vec<Vec<u32>>){
+pub fn compute_coverage(targets_db: &SeqDB, bait_db: &SeqDB, d: usize, g: usize, m: usize, n_threads: usize, overhang: usize) -> (Vec<Vec<u32>>, Vec<Vec<u32>>){
 
     let index = MinimizerIndex::new(&targets_db, g, m);
 
@@ -126,8 +129,8 @@ pub fn compute_coverage(targets_db: &SeqDB, bait_db: &SeqDB, d: usize, g: usize,
     thread_pool.install(|| {
         (0..bait_db.sequence_count()).into_par_iter().for_each(|i| {
             let bait = bait_db.get(i);
-            update_coverage(&coverages, &mismatches, bait.seq, &index, targets_db, d);
-            update_coverage(&coverages, &mismatches, reverse_complement(bait.seq).as_slice(), &index, targets_db, d);
+            update_coverage(&coverages, &mismatches, bait.seq, &index, targets_db, d, overhang);
+            update_coverage(&coverages, &mismatches, reverse_complement(bait.seq).as_slice(), &index, targets_db, d, overhang);
             progress.inc(1);
         });
     });
@@ -227,7 +230,7 @@ mod tests{
 
         let answer = vec![t0_answer, t1_answer, t2_answer];
 
-        let (coverages, _) = compute_coverage(&target_db, &bait_db,  1, 5, 3, 10);
+        let (coverages, _) = compute_coverage(&target_db, &bait_db, 1, 5, 3, 10, 0);
 
         assert_eq!(answer, coverages);
     }

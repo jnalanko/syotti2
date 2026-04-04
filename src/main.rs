@@ -176,6 +176,13 @@ fn main() {
             .default_value("14")
             .value_parser(clap::value_parser!(usize))
         )
+        .arg(Arg::new("overhang")
+            .help("Extend bait coverage this many bases in each direction beyond the alignment")
+            .short('w')
+            .long("overhang")
+            .default_value("0")
+            .value_parser(clap::value_parser!(usize))
+        )
         .arg(Arg::new("coverage-out")
             .help("Output csv file for the coverage data.")
             .long_help("The output file will have one file per sequence in the target file, containing n comma-separated integers, where n is the length of the sequence. The i'th integer is the number of baits covering the i'th position in the sequence.")
@@ -269,13 +276,14 @@ fn main() {
             let g: usize = *sub_matches.get_one("seed-len").unwrap();
             let m: usize = *sub_matches.get_one("minimizer-len").unwrap();
             let mismatch_outfile: Option<&PathBuf> = sub_matches.get_one("mismatch-out");
+            let overhang: usize = *sub_matches.get_one("overhang").unwrap();
 
             let mismatch_out = mismatch_outfile.map(|path| std::io::BufWriter::new(std::fs::File::create(path).unwrap()));
             let mut out = std::io::BufWriter::new(std::fs::File::create(outfile).unwrap());
             let bait_db = DynamicFastXReader::from_file(&baitfile).unwrap().into_db().unwrap(); // TODO: print info log
             let targets_db = DynamicFastXReader::from_file(&targetfile).unwrap().into_db().unwrap();
         
-            let (coverages, mismatches) = compute_coverage(&targets_db, &bait_db, d, g, m, n_threads);
+            let (coverages, mismatches) = compute_coverage(&targets_db, &bait_db, d, g, m, n_threads, overhang);
 
             log::info!("Writing coverage to {}", outfile.display());
             coverage::write_as_csv(&coverages, &mut out, |x| format!("{}", x));
