@@ -266,7 +266,7 @@ fn main() {
             let index = minimizer_index::MinimizerIndex::new(&seq_db, g, m);
 
             info!("Designing baits");
-            design::run_algorithm(&seq_db, &index, L, d, cutoff, require_cutoff_for_every_sequence, overhang, &mut writer);
+            design::run_algorithm(&seq_db, &index, L, d, cutoff, require_cutoff_for_every_sequence, overhang, g, &mut writer);
         }
         Some(("coverage", sub_matches)) => {
             let targetfile: &PathBuf = sub_matches.get_one("targets").unwrap();

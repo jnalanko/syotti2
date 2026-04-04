@@ -51,12 +51,31 @@ fn mark_range(seq_id: usize, mark_start: usize, mark_end: usize, seq_len: usize,
     new_covered_bases
 }
 
+// Returns whether bait and target share an exactly matching window of length seed_len.
+// Runs in O(bait.len()) using a sliding mismatch count.
+fn has_exact_seed_window(bait: &[u8], target: &[u8], seed_len: usize) -> bool {
+    let mut mismatches = 0usize;
+    for i in 0..seed_len {
+        if bait[i] != target[i] { mismatches += 1; }
+    }
+    if mismatches == 0 { return true; }
+    for i in seed_len..bait.len() {
+        if bait[i - seed_len] != target[i - seed_len] { mismatches -= 1; }
+        if bait[i] != target[i] { mismatches += 1; }
+        if mismatches == 0 { return true; }
+    }
+    false
+}
+
 // Returns the number of new bases covered, and updates all coverage state including per-sequence cutoff tracking.
-fn mark_all_that_are_covered_by(bait: &[u8], cov: &mut CoverageState, index: &MinimizerIndex, db: &SeqDB, hamming_distance: usize, overhang: usize) -> usize{
+fn mark_all_that_are_covered_by(bait: &[u8], cov: &mut CoverageState, index: &MinimizerIndex, db: &SeqDB, hamming_distance: usize, overhang: usize, seed_len: usize) -> usize{
     let align_starts = index.get_exact_alignment_candidates(bait);
     let mut new_covered_bases = 0_usize;
     for (seq_id, seq_pos) in align_starts{
-        if syotti2::hamming_distance_not_matching_N(bait, &db.get(seq_id).seq[seq_pos..seq_pos+bait.len()]) <= hamming_distance {
+        let target = &db.get(seq_id).seq[seq_pos..seq_pos+bait.len()];
+        if syotti2::hamming_distance_not_matching_N(bait, target) <= hamming_distance
+            && has_exact_seed_window(bait, target, seed_len)
+        {
             let seq_len = db.get(seq_id).seq.len();
             let mark_start = seq_pos.saturating_sub(overhang);
             let mark_end = (seq_pos + bait.len() + overhang).min(seq_len);
@@ -67,7 +86,7 @@ fn mark_all_that_are_covered_by(bait: &[u8], cov: &mut CoverageState, index: &Mi
     new_covered_bases
 }
 
-pub fn run_algorithm(db: &SeqDB, index: &MinimizerIndex, bait_len: usize, hamming_distance: usize, cutoff: f64, require_cutoff_for_every_sequence: bool, overhang: usize, fasta_out: &mut impl std::io::Write){
+pub fn run_algorithm(db: &SeqDB, index: &MinimizerIndex, bait_len: usize, hamming_distance: usize, cutoff: f64, require_cutoff_for_every_sequence: bool, overhang: usize, seed_len: usize, fasta_out: &mut impl std::io::Write){
 
     // Initialize the cover marks to falses. False means not covered.
     let mut total_seq_len = 0_usize;
@@ -103,8 +122,8 @@ pub fn run_algorithm(db: &SeqDB, index: &MinimizerIndex, bait_len: usize, hammin
             let mark_end = (bait_end + overhang).min(rec.seq.len());
             total_covered += mark_range(seq_id, mark_start, mark_end, rec.seq.len(), &mut cov);
 
-            total_covered += mark_all_that_are_covered_by(bait, &mut cov, index, db, hamming_distance, overhang);
-            total_covered += mark_all_that_are_covered_by(&jseqio::reverse_complement(bait), &mut cov, index, db, hamming_distance, overhang);
+            total_covered += mark_all_that_are_covered_by(bait, &mut cov, index, db, hamming_distance, overhang, seed_len);
+            total_covered += mark_all_that_are_covered_by(&jseqio::reverse_complement(bait), &mut cov, index, db, hamming_distance, overhang, seed_len);
 
             n_baits += 1;
             prev_end = bait_end;
@@ -271,7 +290,7 @@ mod tests{
 
         let index = MinimizerIndex::new(&db, g, 1);
         let mut fasta_out = Vec::<u8>::new();
-        run_algorithm(&db, &index, bait_length, d, 1.0, false, 0, &mut fasta_out);
+        run_algorithm(&db, &index, bait_length, d, 1.0, false, 0, g, &mut fasta_out);
 
         let reader = jseqio::reader::DynamicFastXReader::new(std::io::Cursor::new(fasta_out)).unwrap();
         let bait_db = reader.into_db().unwrap();
@@ -302,7 +321,7 @@ mod tests{
 
         let index = MinimizerIndex::new(&db, g, 1);
         let mut fasta_out = Vec::<u8>::new();
-        run_algorithm(&db, &index, bait_length, d, 1.0, false, overhang, &mut fasta_out);
+        run_algorithm(&db, &index, bait_length, d, 1.0, false, overhang, g, &mut fasta_out);
 
         let bait_db = jseqio::reader::DynamicFastXReader::new(std::io::Cursor::new(fasta_out)).unwrap().into_db().unwrap();
         let baits = bait_db.iter().map(|r| r.seq).collect::<Vec<&[u8]>>();
@@ -329,14 +348,14 @@ mod tests{
 
         // Without the flag: one bait covers all of seq1 (10/20 = 50% global) → stop.
         let mut out = Vec::<u8>::new();
-        run_algorithm(&db, &index, bait_length, d, cutoff, false, 0, &mut out);
+        run_algorithm(&db, &index, bait_length, d, cutoff, false, 0, g, &mut out);
         let bait_db = jseqio::reader::DynamicFastXReader::new(std::io::Cursor::new(out)).unwrap().into_db().unwrap();
         assert_eq!(bait_db.sequence_count(), 1);
         assert_eq!(bait_db.get(0).seq, b"AAAAA");
 
         // With the flag: seq1 and seq2 must each individually reach 50%, requiring one bait each.
         let mut out = Vec::<u8>::new();
-        run_algorithm(&db, &index, bait_length, d, cutoff, true, 0, &mut out);
+        run_algorithm(&db, &index, bait_length, d, cutoff, true, 0, g, &mut out);
         let bait_db = jseqio::reader::DynamicFastXReader::new(std::io::Cursor::new(out)).unwrap().into_db().unwrap();
         assert_eq!(bait_db.sequence_count(), 2);
         assert_eq!(bait_db.get(0).seq, b"AAAAA");
