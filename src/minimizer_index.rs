@@ -287,7 +287,7 @@ mod build{
                 let mut tuples = Vec::<(Kmer, u32, u32)>::new();
                 for p in pos_list.iter(){
                     let minmer = Kmer::from_ascii(&db.get(i).seq[*p..*p+m]).unwrap();
-                    tuples.push((minmer, i as u32, *p as u32));
+                    tuples.push((minmer, u32::try_from(i).expect("sequence id overflows u32"), u32::try_from(*p).expect("sequence position overflows u32")));
                 }
                 tuples
             })
