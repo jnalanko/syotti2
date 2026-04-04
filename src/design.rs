@@ -298,7 +298,7 @@ mod tests{
         //                                                ********    ********                 ********
         //                                              01234567890123456789012345678
         db.push_record(jseqio::record::RefRecord{seq: b"ACGTATTCGTGATTCTGTAGTCAGCGTAC", head: b"", qual: None});
-        db.push_record(jseqio::record::RefRecord{seq: b"ACGTATTCGTGATTCTGTAGTCAGCGTACAAATTCTGTATGCTAGCA", head: b"", qual: None}); // 12 C's
+        db.push_record(jseqio::record::RefRecord{seq: b"ACGTATTCGTGATTCTGTAGTCAGCGTACAAATTCTGTATGCTAGCA", head: b"", qual: None});
 
         let index = MinimizerIndex::new(&db, g, 1);
         let mut fasta_out = Vec::<u8>::new();
