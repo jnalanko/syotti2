@@ -131,6 +131,13 @@ fn main() {
                 .long("require-cutoff-for-every-sequence")
                 .action(ArgAction::SetTrue)
             )
+            .arg(Arg::new("overhang")
+                .help("Extend bait coverage this many bases in each direction beyond the alignment")
+                .short('w')
+                .long("overhang")
+                .default_value("0")
+                .value_parser(clap::value_parser!(usize))
+            )
         )
     .subcommand(Command::new("coverage")
         .arg_required_else_help(true)
@@ -236,6 +243,7 @@ fn main() {
             let cutoff: f64 = *sub_matches.get_one("cutoff").unwrap();
             let randomize: bool = sub_matches.get_flag("randomize");
             let require_cutoff_for_every_sequence: bool = sub_matches.get_flag("require-cutoff-for-every-sequence");
+            let overhang: usize = *sub_matches.get_one("overhang").unwrap();
 
             if randomize { // TODO
                 std::unimplemented!("Randomization not implemented yet");
@@ -251,7 +259,7 @@ fn main() {
             let index = minimizer_index::MinimizerIndex::new(&seq_db, g, m);
 
             info!("Designing baits");
-            design::run_algorithm(&seq_db, &index, L, d, cutoff, require_cutoff_for_every_sequence, &mut writer);
+            design::run_algorithm(&seq_db, &index, L, d, cutoff, require_cutoff_for_every_sequence, overhang, &mut writer);
         }
         Some(("coverage", sub_matches)) => {
             let targetfile: &PathBuf = sub_matches.get_one("targets").unwrap();
